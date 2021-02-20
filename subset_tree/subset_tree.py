@@ -81,9 +81,10 @@ def run(args):
 
     # write to disk
     subt.sort_descendants()
-    subt.write(features=[],outfile=args.output,format=1)
+    subt.resolve_polytomy(recursive=True)
+    subt.write(features=None,outfile=args.output,format=5)
     if args.draw is True:
-        os.environ['QT_QPA_PLATFORM']='offscreen'
+        # os.environ['QT_QPA_PLATFORM']='offscreen'
         from matplotlib import cm
         from matplotlib.colors import to_hex
 

@@ -20,6 +20,11 @@ def run(args):
     # load tree
     t = Tree(args.tree,format=1)
 
+    good_seqids = set(meta_df["seqname"]).intersection(set(t.get_leaf_names()))
+    t.prune(good_seqids)
+    meta_df = meta_df[meta_df["seqname"].isin(good_seqids)].reset_index(drop=True)
+
+
     # get groups of genomes by clade
     all_kept_genomes = set()
 
@@ -75,10 +80,53 @@ def run(args):
     print("The final subsetted tree contains "+str(len(subt.get_leaf_names()))+" out of "+str(len(t.get_leaf_names())))
 
     # write to disk
+    subt.sort_descendants()
     subt.write(features=[],outfile=args.output,format=1)
     if args.draw is True:
         os.environ['QT_QPA_PLATFORM']='offscreen'
-        subt.render(args.output+".svg")
+        from matplotlib import cm
+        from matplotlib.colors import to_hex
+
+        viridis = cm.get_cmap('viridis',12)
+
+        clades = dict([(i,x) for x,i in enumerate(sorted(list(set(meta_df["grp"]))))]) # assign IDs for clades
+        meta_df["grpid"] = meta_df["grp"]
+        meta_df = meta_df.replace({"grpid":clades})
+
+        # normalize cluids and generate palette
+        clade_colors = dict()
+        for clu,cluid in clades.items():
+            min_cluid = min(clades.values())
+            max_cluid = max(clades.values())
+            norm_cluid = (((0.9999-0.0001)*(cluid-min_cluid))/(max_cluid-min_cluid))+0.0001
+            norm_color = to_hex(viridis(norm_cluid))
+            clade_colors[cluid] = norm_color
+
+        ts = TreeStyle()
+
+        seen_clades = set()
+        for node in subt.get_leaves():
+            seqid = node.name
+            # for everything else we just need to set the color of the cluster
+            if node.is_leaf():
+                nstyle = NodeStyle()
+                cluid = meta_df[meta_df["seqname"]==seqid]["grpid"].iloc[0]
+                c = clade_colors[cluid]
+                nstyle["bgcolor"] = c
+                node.set_style(nstyle)
+
+                if not cluid in seen_clades: # add to legend if haven't seen the clade before
+                    clu = meta_df[meta_df["grpid"]==cluid]["grp"].iloc[0]
+                    ts.legend.add_face(faces.RectFace(height=10,width=10,fgcolor=c,bgcolor=c),column=0)
+                    ts.legend.add_face(faces.TextFace(clu),column=1)
+                    seen_clades.add(cluid)
+
+        ts.show_leaf_name = False
+        ts.allow_face_overlap=True
+
+        ts.mode = "c"
+        ts.root_opening_factor = 0.25
+        subt.render(args.output+".png",tree_style=ts,w=600,h=1000)
 
     return
 

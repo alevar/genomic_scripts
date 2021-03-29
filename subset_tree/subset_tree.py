@@ -73,6 +73,9 @@ def run(args):
     for seq in preserved_genomes:
         all_kept_genomes.add(seq)
 
+    sub_meta = meta_df[meta_df["seqname"].isin(all_kept_genomes)].reset_index(drop=True)
+    sub_meta.to_csv(args.output+".meta.csv",index=False)
+
     # final pruning to select the tree with only selected genomes
     subt = t.copy()
     subt.prune(list(all_kept_genomes))

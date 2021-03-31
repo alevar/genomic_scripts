@@ -1,0 +1,3 @@
+[submodule "orfanage/include/gclib"]
+	path = orfanage/include/gclib
+	url = https://github.com/gpertea/gclib

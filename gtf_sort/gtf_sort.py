@@ -32,7 +32,7 @@ def gtf_sort(args):
     df["parent"]=df["attributes"].str.split("transcript_id \"",expand=True)[1].str.split("\"",expand=True)[0]
     df["type"]=pd.Categorical(df["type"],categories=["transcript","exon","CDS"],ordered=True)
     df.sort_values(by=["seqid","strand","parent","type","start","end"],ascending=True,inplace=True)
-    df.to_csv(args.output,sep="\t",index=False,header=False,quoting=csv.QUOTE_NONE)
+    df[gff3cols].to_csv(args.output,sep="\t",index=False,header=False,quoting=csv.QUOTE_NONE)
 
 def main(args):
     parser=argparse.ArgumentParser(description='''Help Page''')

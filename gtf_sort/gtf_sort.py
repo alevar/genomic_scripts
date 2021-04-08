@@ -19,8 +19,12 @@ import os
 def gtf_sort(args):
     gff3cols=["seqid","source","type","start","end","score","strand","phase","attributes"]
     df=pd.read_csv(args.input,sep="\t",names=gff3cols,comment="#")
+    df["start"] = df["start"].astype(int)
+    df["end"] = df["end"].astype(int)
 
     df = df[df["type"].isin(["transcript","exon","CDS"])].reset_index(drop=True)
+
+    # TODO: sorting does not work - first sorts by transcript ID, while it needs to be transcript start coordinate instead (and then attach exons and CDSs)
 
     # check if GFF or GTF
     gff3 = False

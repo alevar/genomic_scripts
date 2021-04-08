@@ -1,5 +1,5 @@
 //
-// Created by beril Erdogdu and Ales Varabyou on 03/30/21.
+// Created by Beril Erdogdu and Ales Varabyou on 03/30/21.
 //
 
 #include <cstdlib>
@@ -13,7 +13,10 @@
 #include <fstream>
 #include "arg_parse.h"
 
+#define DBUF_LEN=1024;
+
 typedef std::vector<std::pair<uint,uint>> CHAIN_TYPE;
+typedef std::vector<std::tuple<uint,uint,uint>> CDS_CHAIN_TYPE; // start,end,phase
 
 struct Mods{
     CHAIN_TYPE new_chain;
@@ -29,11 +32,14 @@ struct Mods{
     int num_bp_outframe = 0;
     int num_bp_inframe = 0;
 
+    std::string orig_cds_tid = ""; // tid of the original CDS
+
     int get_score(){
         return missing_start*10+missing_end*10+num_bp_extra+num_bp_missing+num_bp_outframe;
     }
     std::string get_desc(){
-        return "missing_start \""+std::to_string(missing_start)+"\"; "+
+        return "CDS_tid \""+this->orig_cds_tid+"\"; "+
+               "missing_start \""+std::to_string(missing_start)+"\"; "+
                "missing_end \""+std::to_string(missing_end)+"\"; "+
                "num_bp_outframe \""+std::to_string(num_bp_outframe)+"\"; "+
                "num_bp_inframe \""+std::to_string(num_bp_inframe)+"\"; "+
@@ -49,6 +55,7 @@ struct TX{
         this->tid = tx->getID();
         this->seqid = tx->getGSeqName();
         this->strand = tx->strand;
+        this->source = tx->getTrackName();
         for(int i=0;i<tx->exons.Count();i++){
             this->exons.push_back(std::make_pair(tx->exons.Get(i)->start,tx->exons.Get(i)->end));
         }
@@ -57,8 +64,104 @@ struct TX{
             this->cds_start = tx->CDstart;
             this->cds_end = tx->CDend;
         }
+        // store attributes
+        if (tx->attrs!=NULL) {
+            bool trId=false;
+            //bool gId=false;
+            for (int i=0;i<tx->attrs->Count();i++) {
+                const char* attrname=tx->names->attrs.getName(tx->attrs->Get(i)->attr_id);
+                const char* attrval=tx->attrs->Get(i)->attr_val;
+                if (attrval==NULL || attrval[0]=='\0') continue;
+                if (strcmp(attrname, "transcriptID")==0) {
+                    if (trId) continue;
+                    trId=true;
+                }
+                if (strcmp(attrname, "transcript_id")==0 && !trId) {
+                    attrname="transcriptID";
+                    trId=true;
+                }
+                if (Gstrcmp(attrname, "geneID")==0 || strcmp(attrname, "gene_id")==0){
+                    continue;
+                }
+                this->ait = this->attrs.insert(std::make_pair(attrname,tx->attrs->Get(i)->attr_val));
+                if(!this->ait.second){
+                    std::cerr<<"Attribute: "<<attrname<<" already exists"<<std::endl;
+                    exit(-1);
+                }
+            }
+        }
     }
     ~TX()=default;
+
+    std::string get_attributes(){
+        std::string res = "";
+        for(auto& a : this->attrs){
+            res+=a.first+" \""+a.second+"\";";
+        }
+        return res;
+    }
+
+    void assign_phase() {
+        int cdsacc=0;
+        if (this->strand=='-') { //reverse strand
+            for(int i=this->cdss.size()-1;i>=0;i--){
+                std::get<2>(this->cdss[i])=(3-cdsacc%3)%3;
+                cdsacc+=std::get<1>(this->cdss[i])-std::get<0>(this->cdss[i])+1;
+            }
+        }
+        else { //forward strand
+            for(auto& cds : this->cdss){
+                std::get<2>(cds)=(3-cdsacc%3)%3;
+                cdsacc+=std::get<1>(cds)-std::get<0>(cds)+1;
+            }
+        }
+    }
+
+    int exon_count() const{
+        return this->exons.size();
+    }
+
+    bool operator< (const TX& tx) const{
+        if(this->get_seqid()!=tx.get_seqid()){
+            return this->get_seqid()<tx.get_seqid();
+        }
+        else if(this->get_strand()!=tx.get_strand()){
+            return this->get_strand()<tx.get_strand();
+        }
+        else if(this->get_start()!=tx.get_start()){
+            return this->get_start()<tx.get_start();
+        }
+        else if(this->get_end()!=tx.get_end()){
+            return this->get_end()<tx.get_end();
+        }
+        else{ // doesn't matter - they definitely overlap
+            return true;
+        }
+    }
+    bool operator> (const TX& tx) const{
+        if(this->get_seqid()!=tx.get_seqid()){
+            return this->get_seqid()>tx.get_seqid();
+        }
+        else if(this->get_strand()!=tx.get_strand()){
+            return this->get_strand()>tx.get_strand();
+        }
+        else if(this->get_start()!=tx.get_start()){
+            return this->get_start()>tx.get_start();
+        }
+        else if(this->get_end()!=tx.get_end()){
+            return this->get_end()>tx.get_end();
+        }
+        else{ // doesn't matter - they definitely overlap
+            return false;
+        }
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const TX& t)
+    {
+        os << t.get_tid() << "\t" <<std::endl;
+        return os;
+    }
+
 
     bool has_cds(){
         return this->is_coding;
@@ -92,19 +195,19 @@ struct TX{
         }
     }
 
-    int get_end(){
-        return std::get<1>(this->exons[-1]);
+    int get_end() const{
+        return this->exons.back().second;
     }
-    int get_start(){
-        return std::get<0>(this->exons[0]);
+    int get_start() const{
+        return this->exons.front().first;
     }
-    std::string get_seqid(){
+    std::string get_seqid() const{
         return this->seqid;
     }
-    char get_strand(){
+    char get_strand() const{
         return this->strand;
     }
-    std::string get_tid(){
+    std::string get_tid() const{
         return this->tid;
     }
     int get_id(){
@@ -361,7 +464,88 @@ struct TX{
         // now we can take the cut piece and directly compare it to the desired CDS counting any changes
         int score = compare(chain,res.new_chain,res);
 
+        if(cut_len!=0){ // no overlap found - create a dummy chain which will never overlap anything. This way the Mods will still get populated with data and will make it possible to filter
+            if(this->cdss.size()>0){
+                std::cerr<<"cds is already filled"<<std::endl;
+                exit(-1);
+            }
+            for(auto& cd : res.new_chain){
+                this->cdss.push_back(std::make_tuple(cd.first,cd.second,0));
+            }
+            assign_phase();
+            this->mods_gtf_str = res.get_desc();
+            this->cds_start = res.new_chain.front().first;
+            this->cds_end = res.new_chain.back().second;
+        }
+
         return score;
+    }
+
+    void clear_fitted_cds(){
+        this->cdss.clear();
+        this->cds_start = 0;
+        this->cds_end = 0;
+        this->mods_gtf_str = "";
+    }
+
+    bool overlap(uint s, uint e) {
+        if (s>e){
+            std::cerr<<s<<"\t"<<e<<std::endl;
+            std::cerr<<"start>end"<<std::endl;
+            exit(-1);
+        }
+        return (this->get_start()<=e && this->get_end()>=s);
+    }
+
+    std::string get_gtf(std::string ci=""){
+        std::string gtf_str = "";
+
+        // get transcript line
+        gtf_str+=this->seqid+"\t"
+                +this->source+"\t"
+                +"transcript"+"\t"
+                +std::to_string(this->get_start())+"\t"
+                +std::to_string(this->get_end())+"\t"
+                +"."+"\t"
+                +this->strand+"\t"
+                +"."+"\t"
+                +"transcript_id \""+this->tid+ci+"\"; "
+                +this->get_attributes();
+        if(this->cdss.size()>0){
+            gtf_str.append(this->mods_gtf_str);
+        }
+        gtf_str.append("\n");
+        // get exon lines
+        for(auto& e : this->exons){
+            gtf_str+=this->seqid+"\t"
+                     +this->source+"\t"
+                     +"exon"+"\t"
+                     +std::to_string(e.first)+"\t"
+                     +std::to_string(e.second)+"\t"
+                     +"."+"\t"
+                     +this->strand+"\t"
+                     +"."+"\t"
+                     +"transcript_id \""+this->tid+ci+"\"; "
+                     +this->get_attributes()+"\n";
+        }
+
+        // if CDS is fitted - get CDS coordinates based on CDS start and end
+        if(this->cdss.size()>0){
+            for(auto& c : this->cdss){
+                gtf_str+=this->seqid+"\t"
+                         +this->source+"\t"
+                         +"CDS"+"\t"
+                         +std::to_string(std::get<0>(c))+"\t"
+                         +std::to_string(std::get<1>(c))+"\t"
+                         +"."+"\t"
+                         +this->strand+"\t"
+                         +std::to_string(std::get<2>(c))+"\t"
+                         +"transcript_id \""+this->tid+ci+"\"; "
+                         +this->get_attributes()+"\n";
+            }
+        }
+
+        return gtf_str;
     }
 
 private:
@@ -370,9 +554,15 @@ private:
     std::string seqid = "";
     char strand = 0;
     CHAIN_TYPE exons;
+    CDS_CHAIN_TYPE cdss;
     uint cds_start = 0;
     uint cds_end = 0;
     bool is_coding = false;
+    std::string source = "";
+    std::string mods_gtf_str = "";
+
+    std::map<std::string,std::string> attrs;
+    std::pair<std::map<std::string,std::string>::iterator,bool> ait;
 };
 
 class Bundle{
@@ -380,13 +570,13 @@ public:
     Bundle()=default;
     ~Bundle()=default;
 
-    bool can_add(GffObj* tx){
+    bool can_add(TX& t){
         if(this->size==0){
             return true;
         }
         else{
-            if(std::strcmp(this->seqid.c_str(),tx->getGSeqName())==0 && this->strand==tx->strand){
-                if(tx->overlap(this->start,this->end)){
+            if(std::strcmp(this->seqid.c_str(),t.get_seqid().c_str())==0 && this->strand==t.get_strand()){
+                if(t.overlap(this->start,this->end)){
                     return true;
                 }
                 else{
@@ -397,15 +587,15 @@ public:
         }
     }
 
-    bool add_tx(GffObj* tx,uint idx){
-        if(!this->can_add(tx)){
+    bool add_tx(TX& t){
+        if(!this->can_add(t)){
             return false;
         }
-        this->txs.push_back(TX(tx,idx));
-        this->seqid = tx->getGSeqName();
-        this->strand = tx->strand;
-        this->start = std::min(this->start,tx->start);
-        this->end = std::max(this->end,tx->end);
+        this->txs.push_back(t);
+        this->seqid = t.get_seqid();
+        this->strand = t.get_strand();
+        this->start = std::min(this->start,t.get_start());
+        this->end = std::max(this->end,t.get_end());
         this->size++;
     }
 
@@ -447,7 +637,7 @@ public:
         return res;
     }
 
-    int process(std::ofstream& out_al_fp){
+    int process(std::ofstream& out_al_fp,std::ofstream& out_gtf_fp){
         // built a dict of all ORFs for searching
         std::vector<std::pair<std::string,CHAIN_TYPE>> cds_chains; // outer pair int is the TID of the transcript
         std::set<CHAIN_TYPE> cur_cds_chains; // for duplicate removal
@@ -466,6 +656,8 @@ public:
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
         for(auto& tx : this->txs){
             if(cds_chains.empty()){
+                out_gtf_fp<<tx.get_gtf();
+
                 out_al_fp<<tx.get_tid()<<"\t"
                          <<"-\t"
                          <<tx.get_seqid()<<"\t"
@@ -483,9 +675,21 @@ public:
                          <<"-\t"
                          <<"-"<<std::endl;
             }
+            int chain_i = 0;
             for(auto& chain : cds_chains){
                 Mods mods_res;
+                mods_res.orig_cds_tid = chain.first;
                 tx.fit(chain.second,mods_res);
+
+                // since we don't know which one is the correct CDS yet (multiple might fit)
+                // we shall create duplicate of the transcript with different CDSs
+                if(cds_chains.size()>1){
+                    out_gtf_fp<<tx.get_gtf(std::to_string(chain_i));
+                }
+                else{
+                    out_gtf_fp<<tx.get_gtf();
+                }
+
                 out_al_fp<<tx.get_tid()<<"\t"
                          <<chain.first<<"\t"
                          <<tx.get_seqid()<<"\t"
@@ -502,6 +706,8 @@ public:
                          <<mods_res.num_bp_match<<"\t"
                          <<chain2str(mods_res.missing)<<"\t"
                          <<chain2str(mods_res.extra)<<std::endl;
+                chain_i++;
+                tx.clear_fitted_cds(); // prepare for the new fitting since we wrote everything we needed
             }
         }
 
@@ -512,31 +718,60 @@ private:
     int size = 0;
     std::string seqid = "";
     char strand = 0;
-    uint start = MAX_INT;
-    uint end = 0;
+    int start = MAX_INT;
+    int end = 0;
+};
+
+// uses gffReader to read-in all transcripts
+// and then sorts them using custom rules
+struct Transcriptome{
+public:
+    Transcriptome(const std::string& gtf_fname){
+        FILE* gff_file = fopen(gtf_fname.c_str(), "r");
+        if (gff_file == nullptr)
+        {
+            std::cerr << "@ERROR::Couldn't open the GTF: " << gtf_fname << std::endl;
+            exit(1);
+        }
+        GffReader gffReader(gff_file,false,false);
+        gffReader.readAll();
+
+        GffObj *pGffObj;
+        for(int i=0;i<gffReader.gflst.Count();++i) {
+            pGffObj = gffReader.gflst.Get(i);
+            tx_vec.push_back(TX(pGffObj,i));
+        }
+    }
+    ~Transcriptome()=default;
+    void sort(){
+        std::sort(this->tx_vec.begin(),this->tx_vec.end());
+    }
+
+    typedef std::vector<TX>::iterator it;
+    typedef std::vector<TX>::const_iterator cit;
+    it begin() {return this->tx_vec.begin();}
+    cit cbegin() const { return this->tx_vec.cbegin();}
+    it end() {return this->tx_vec.end();}
+    cit cend() const { return this->tx_vec.cend();}
+private:
+    std::vector<TX> tx_vec;
 };
 
 int run(const std::string& gtf_fname,const std::string& out_fname){
-    std::ofstream out_al_fp(out_fname);
+    std::ofstream out_stats_fp(out_fname+".stats");
+    std::ofstream out_gtf_fp(out_fname+".gtf");
 
     // read from both GTF streams simultaneously
     // only consider CDS from the reference and exons from the novel
     // form bundles (all overlapping
 
     // load the reference GFF
-    FILE* gff_file = fopen(gtf_fname.c_str(), "r");
-    if (gff_file == nullptr)
-    {
-        std::cerr << "@ERROR::Couldn't open the GTF: " << gtf_fname << std::endl;
-        exit(1);
-    }
-    GffReader gffReader(gff_file,false,false);
-    gffReader.readAll();
+    Transcriptome transcriptome(gtf_fname);
+    transcriptome.sort();
 
     Bundle bundle;
 
-    GffObj *pGffObj;
-    out_al_fp<<"tid\t"
+    out_stats_fp<<"tid\t"
                "cds_tid\t"
                "seqid\t"
                "strand\t"
@@ -552,25 +787,26 @@ int run(const std::string& gtf_fname,const std::string& out_fname){
                "num_bp_match\t"
                "missing_frags\t"
                "extra_frags"<<std::endl;
-    for(int i=0;i<gffReader.gflst.Count();++i){
-        pGffObj = gffReader.gflst.Get(i);
-        if(!bundle.can_add(pGffObj)){
-            bundle.process(out_al_fp);
+
+    for(auto& t : transcriptome){
+        if(!bundle.can_add(t)){
+            bundle.process(out_stats_fp,out_gtf_fp);
             bundle.clear();
-            bundle.add_tx(pGffObj,i);
+            bundle.add_tx(t);
         }
         else{
-            bundle.add_tx(pGffObj,i);
+            bundle.add_tx(t);
         }
     }
     // handle the final bundle
-    bundle.process(out_al_fp);
+    bundle.process(out_stats_fp,out_gtf_fp);
 
     // questions:
     // 1. any transcripts contain multiple CDSs? which one to chose?
     // 2. what to do with minor modifications? (no frame shifts)
 
-    out_al_fp.close();
+    out_stats_fp.close();
+    out_gtf_fp.close();
     return 0;
 }
 

@@ -634,6 +634,9 @@ public:
         if(!res.empty()){
             res.pop_back();
         }
+        if(res.empty()){
+            res = "-";
+        }
         return res;
     }
 
@@ -659,6 +662,7 @@ public:
                 out_gtf_fp<<tx.get_gtf();
 
                 out_al_fp<<tx.get_tid()<<"\t"
+                         <<tx.get_tid()<<"\t"
                          <<"-\t"
                          <<tx.get_seqid()<<"\t"
                          <<tx.get_strand()<<"\t"
@@ -683,14 +687,18 @@ public:
 
                 // since we don't know which one is the correct CDS yet (multiple might fit)
                 // we shall create duplicate of the transcript with different CDSs
-                if(cds_chains.size()>1){
-                    out_gtf_fp<<tx.get_gtf(std::to_string(chain_i));
+                std::string out_tid_name = tx.get_tid();
+                if(cds_chains.size()>1 && !mods_res.new_chain.empty()){ // TODO: needs work - could lead to duplicates
+                    out_gtf_fp<<tx.get_gtf(":-:"+std::to_string(chain_i));
+                    out_tid_name+=":-:"+std::to_string(chain_i);
+                    chain_i++;
                 }
                 else{
                     out_gtf_fp<<tx.get_gtf();
                 }
 
                 out_al_fp<<tx.get_tid()<<"\t"
+                         <<out_tid_name<<"\t"
                          <<chain.first<<"\t"
                          <<tx.get_seqid()<<"\t"
                          <<tx.get_strand()<<"\t"
@@ -706,7 +714,6 @@ public:
                          <<mods_res.num_bp_match<<"\t"
                          <<chain2str(mods_res.missing)<<"\t"
                          <<chain2str(mods_res.extra)<<std::endl;
-                chain_i++;
                 tx.clear_fitted_cds(); // prepare for the new fitting since we wrote everything we needed
             }
         }
@@ -772,6 +779,7 @@ int run(const std::string& gtf_fname,const std::string& out_fname){
     Bundle bundle;
 
     out_stats_fp<<"tid\t"
+               "new_tid\t"
                "cds_tid\t"
                "seqid\t"
                "strand\t"

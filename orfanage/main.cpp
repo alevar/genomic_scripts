@@ -267,6 +267,20 @@ struct TX{
         return len;
     }
 
+    int recompare(CHAIN_TYPE& chain1,CHAIN_TYPE& chain2,Mods& res){ // clear the contents of the Mods and redo comparison
+        res.missing.clear();
+        res.extra.clear();
+        res.num_bp_match=0;
+        res.num_bp_missing=0;
+        res.num_bp_extra=0;
+        res.num_bp_inframe=0;
+        res.num_bp_outframe=0;
+        res.missing_start=false;
+        res.missing_end=false;
+
+        return this->compare(chain1,chain2,res);
+    }
+
     int compare(CHAIN_TYPE& chain1,CHAIN_TYPE& chain2,Mods& res){
         int c1_i=0,c2_i=0;
         std::pair<uint,uint> cur_c1 = chain1[c1_i];
@@ -744,16 +758,38 @@ public:
                     uint ce = m.new_chain[i].second-this->start; // end coordinate of the chain with respect to the bundle start
                     size_t clen = (ce+1)-cs;
                     if(left_to_stop<clen){ // found the cds segment with the stop codon
-                        m.new_chain[i].second -= left_to_stop;
+                        m.new_chain[i].second = (m.new_chain[i].first+left_to_stop)-1;
+                        if(i<m.new_chain.size()-1){
+                            m.new_chain.erase(m.new_chain.begin()+i+1,m.new_chain.end());
+                        }
+                        m.cds_nt.erase(m.cds_nt.begin()+stop_nt_pos,m.cds_nt.end());
+                        m.cds_aa.erase(m.cds_aa.begin()+stop_aa_pos,m.cds_aa.end());
+                        break;
                     }
                     left_to_stop-=clen;
                 }
             }
             else{ // strand=='-
-
+                for(int i=m.new_chain.size()-1;i>=0;i--){
+                    uint cs = m.new_chain[i].first-this->start; // start coordinate of the chain with respect to the bundle start
+                    uint ce = m.new_chain[i].second-this->start; // end coordinate of the chain with respect to the bundle start
+                    size_t clen = (ce+1)-cs;
+                    if(left_to_stop<clen){ // found the cds segment with the stop codon
+                        m.new_chain[i].first = m.new_chain[i].second-left_to_stop; // TODO: test
+                        if(i>0) {
+                            uint last_to_remove = m.new_chain.size()-i-1;
+                            m.new_chain.erase(m.new_chain.begin(),m.new_chain.begin()+last_to_remove); // TODO: test
+                        }
+                        m.cds_nt.erase(m.cds_nt.begin(),m.cds_nt.begin()+(m.cds_nt.size()-stop_nt_pos-1));
+                        m.cds_aa.erase(m.cds_aa.begin(),m.cds_aa.begin()+(m.cds_aa.size()-stop_aa_pos-1));
+                        break;
+                    }
+                    left_to_stop-=clen;
+                }
             }
 
             // TODO: test that the chain is broken correctly  when the stop codon is the first in the exon/last in the exon/etc
+            //    also on the + and - strands
 
             // update info:
             // 1. length
@@ -775,6 +811,7 @@ public:
 
         }
 
+        // if the original chain contains an in-frame stop codon at the same position as the fitted chain - do not re-adjust
 
         // check if ends in stop codon - if not - check the first occurrence
         // TODO: this may require examining the 3 bases after the CDS frame - since stop codons are typically not included in the CDS
@@ -842,6 +879,9 @@ public:
                 if(this->check_ref){
                     this->evaluate_fasta(mods_res,bundle_seq);
                     this->adjust_stop(mods_res);
+                    // redo comparison
+                    tx.recompare(chain.new_chain,mods_res.new_chain,mods_res);
+                    std::cout<<this->get_nt(mods_res.new_chain,bundle_seq)<<std::endl;
                     this->compare_aa(chain,mods_res);
                 }
 

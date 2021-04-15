@@ -34,8 +34,6 @@ add_executable(orfanage
         ${CMAKE_SOURCE_DIR}/include/gclib/GStr.cpp
         ${CMAKE_SOURCE_DIR}/include/gclib/GBase.h
         ${CMAKE_SOURCE_DIR}/include/gclib/GBase.cpp
-        ${CMAKE_SOURCE_DIR}/include/gclib/GFaSeqGet.h
-        ${CMAKE_SOURCE_DIR}/include/gclib/GFaSeqGet.cpp
         ${CMAKE_SOURCE_DIR}/include/gclib/codons.h
         ${CMAKE_SOURCE_DIR}/include/gclib/codons.cpp
         ${CMAKE_SOURCE_DIR}/include/gclib/gdna.h
@@ -45,6 +43,13 @@ add_executable(orfanage
         ${CMAKE_SOURCE_DIR}/include/gclib/GVec.hh
         ${CMAKE_SOURCE_DIR}/include/gclib/GList.hh
         ${CMAKE_SOURCE_DIR}/include/gclib/GHash.hh
+        ${CMAKE_SOURCE_DIR}/include/gclib/GFaSeqGet.h
+        ${CMAKE_SOURCE_DIR}/include/gclib/GFaSeqGet.cpp
+        ${CMAKE_SOURCE_DIR}/include/gclib/GFastaIndex.h
+        ${CMAKE_SOURCE_DIR}/include/gclib/GFastaIndex.cpp
+        ${CMAKE_SOURCE_DIR}/include/gclib/GFastaFile.h
+        src/gff_utils.h
+        src/gff_utils.cpp
         main.cpp)
 
 target_link_libraries(orfanage -lbz2 -llzma -pthread -lcrypto -lcurl -lz)

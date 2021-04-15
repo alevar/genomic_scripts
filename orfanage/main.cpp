@@ -11,6 +11,7 @@
 
 #include <gclib/gff.h>
 #include <fstream>
+#include <gff_utils.h>
 #include "arg_parse.h"
 
 #define DBUF_LEN=1024;
@@ -33,6 +34,10 @@ struct Mods{
     int num_bp_inframe = 0;
 
     std::string orig_cds_tid = ""; // tid of the original CDS
+
+    std::string cds_nt = ""; // nucleotide sequence
+    std::string cds_aa = ""; // translated amino-acid sequence
+    char expected_stop_codon = '.'; // amino acid coded by the three bases after the end of the CDS
 
     int get_score(){
         return missing_start*10+missing_end*10+num_bp_extra+num_bp_missing+num_bp_outframe;
@@ -568,7 +573,15 @@ private:
 class Bundle{
 public:
     Bundle()=default;
-    ~Bundle()=default;
+    ~Bundle(){
+//        delete this->seqid_seq;
+    }
+
+    void set_ref(const std::string& ref_fa_fname){
+        this->ref_fa_fname = ref_fa_fname;
+        this->check_ref = true;
+        gfasta.init(ref_fa_fname.c_str());
+    }
 
     bool can_add(TX& t){
         if(this->size==0){
@@ -640,9 +653,135 @@ public:
         return res;
     }
 
+    std::string get_nt(CHAIN_TYPE& chain, const char* subseq){
+        std::string cds_nt = "";
+        if(this->strand=='+'){
+            for(auto& c : chain){
+                uint cs = c.first-this->start; // start coordinate of the chain with respect to the bundle start
+                uint ce = c.second-this->start; // end coordinate of the chain with respect to the bundle start
+                for(uint i=cs;i<=ce;i++){
+                    cds_nt+=subseq[i];
+                }
+            }
+        }
+        else{ // strand=='-'
+            for(int ci=chain.size()-1;ci>=0;ci--){
+                uint cs = chain[ci].first-this->start; // start coordinate of the chain with respect to the bundle start
+                uint ce = chain[ci].second-this->start; // end coordinate of the chain with respect to the bundle start
+                for (uint i=ce;i>=cs;i--) {
+                    cds_nt+=ntComplement(subseq[i]);
+                }
+            }
+        }
+        return cds_nt;
+    }
+
+    std::string get_aa(CHAIN_TYPE& chain, const char* subseq){
+        std::string cds_nt = get_nt(chain,subseq);
+        int cds_len = 0;
+        std::string cds_aa = translateDNA(cds_nt.c_str(),cds_len,cds_nt.size());
+        return cds_aa;
+    }
+
+    void evaluate_fasta(Mods& res,const char* subseq){
+        int stop_coord = 0;
+        std::string stop_nts = "";
+        if(this->strand=='+'){
+            for(auto& c : res.new_chain){
+                uint cs = c.first-this->start; // start coordinate of the chain with respect to the bundle start
+                uint ce = c.second-this->start; // end coordinate of the chain with respect to the bundle start
+                for(uint i=cs;i<=ce;i++){
+                    res.cds_nt+=subseq[i];
+                }
+            }
+            // now add the next three bases - that's where the stop codon is expected to be
+            for(uint i=res.new_chain.back().second+1;i<=res.new_chain.back().second+4;i++){
+                stop_nts+=subseq[i];
+            }
+        }
+        else{ // strand=='-'
+            for(int ci=res.new_chain.size()-1;ci>=0;ci--){
+                uint cs = res.new_chain[ci].first-this->start; // start coordinate of the chain with respect to the bundle start
+                uint ce = res.new_chain[ci].second-this->start; // end coordinate of the chain with respect to the bundle start
+                for (uint i=ce;i>=cs;i--) {
+                    res.cds_nt+=ntComplement(subseq[i]);
+                }
+            }
+            // now add the next three bases - that's where the stop codon is expected to be
+            for(uint i=res.new_chain.front().first;i>=res.new_chain.front().first-3;i--){
+                stop_nts+=subseq[i];
+            }
+        }
+        int cds_len = 0;
+        char* cdsaa = translateDNA(res.cds_nt.c_str(),cds_len,res.cds_nt.size());
+        res.cds_aa = cdsaa;
+
+        int stop_len = 0;
+        char* stopaa = translateDNA(stop_nts.c_str(),stop_len,3);
+        res.expected_stop_codon = stopaa[0];
+
+        return;
+        // TODO: also for each chain - output a separate stats file describing
+        //     1. fraction of transcripts in the bundle it fits
+        //     2. list of transcripts it fits
+
+        // TODO: remove duplicate transcripts?
+    }
+
+    void adjust_stop(Mods& m){ // adjust the chain coordinates to stop at the first stop codon
+        if(m.cds_aa.empty()){
+            std::cerr<<"amino chain is empty"<<std::endl;
+            exit(2);
+        }
+        size_t stop_aa_pos = m.cds_aa.find('.');
+        if(stop_aa_pos!=std::string::npos){ // stop codon was found
+            size_t stop_nt_pos = stop_aa_pos*3;
+            // find CDS piece in which the first nt of the stop codon was found
+            if(this->strand=='+'){
+                for(auto& c : m.new_chain){
+
+                }
+            }
+            else{ // strand=='-
+
+            }
+
+            // update info:
+            // 1. length
+            // 2. stop nt
+            // 3. stop aa
+            // 4. extra/missing
+            // 5. nt sequence
+            // 6. aa sequence
+
+            // TODO: add length of the original and fitted ORFs to the stats
+        }
+    }
+
+    void compare_aa(Mods& ref_res, Mods& new_res){
+        // check if starts with start codon - if not - check the first one
+        if(ref_res.expected_stop_codon == new_res.expected_stop_codon){
+
+        }
+
+
+        // check if ends in stop codon - if not - check the first occurrence
+        // TODO: this may require examining the 3 bases after the CDS frame - since stop codons are typically not included in the CDS
+        return;
+    }
+
     int process(std::ofstream& out_al_fp,std::ofstream& out_gtf_fp){
+        const char* bundle_seq = NULL;
+        if(this->check_ref){
+            this->seqid_seq=fastaSeqGet(gfasta, this->seqid.c_str());
+            if(this->seqid_seq==NULL){
+                std::cerr<<"Error: no genomic sequence available (check -r option!)."<<std::endl;
+            }
+            int bundle_len = ((this->end+1)-this->start)+3;
+            bundle_seq=this->seqid_seq->subseq(this->start,bundle_len); // +3 is to account for the last stop codon if the end of the last CDS corresponds to the end of the last exon
+        }
         // built a dict of all ORFs for searching
-        std::vector<std::pair<std::string,CHAIN_TYPE>> cds_chains; // outer pair int is the TID of the transcript
+        std::vector<Mods> cds_chains; // outer pair int is the TID of the transcript
         std::set<CHAIN_TYPE> cur_cds_chains; // for duplicate removal
         std::pair<std::set<CHAIN_TYPE>::iterator,bool> cit;
         for(auto& tx : this->txs){
@@ -651,7 +790,11 @@ public:
                 tx.build_cds_chain(cur_cds_chain);
                 cit = cur_cds_chains.insert(cur_cds_chain);
                 if(cit.second){ // successfully inserted
-                    cds_chains.push_back(std::make_pair(tx.get_tid(),cur_cds_chain));
+                    Mods m;
+                    m.new_chain = cur_cds_chain;
+                    m.orig_cds_tid = tx.get_tid();
+                    this->evaluate_fasta(m,bundle_seq);
+                    cds_chains.push_back(m);
                 }
             }
         }
@@ -679,11 +822,17 @@ public:
                          <<"-\t"
                          <<"-"<<std::endl;
             }
+            // TODO: when a premature stop-codon is found - needs to be stored as a separate stat
             int chain_i = 0;
             for(auto& chain : cds_chains){
                 Mods mods_res;
-                mods_res.orig_cds_tid = chain.first;
-                tx.fit(chain.second,mods_res);
+                mods_res.orig_cds_tid = chain.orig_cds_tid;
+                tx.fit(chain.new_chain,mods_res);
+                if(this->check_ref){
+                    this->evaluate_fasta(mods_res,bundle_seq);
+                    this->adjust_stop(mods_res);
+                    this->compare_aa(chain,mods_res);
+                }
 
                 // since we don't know which one is the correct CDS yet (multiple might fit)
                 // we shall create duplicate of the transcript with different CDSs
@@ -699,10 +848,10 @@ public:
 
                 out_al_fp<<tx.get_tid()<<"\t"
                          <<out_tid_name<<"\t"
-                         <<chain.first<<"\t"
+                         <<chain.orig_cds_tid<<"\t"
                          <<tx.get_seqid()<<"\t"
                          <<tx.get_strand()<<"\t"
-                         <<chain2str(chain.second)<<"\t"
+                         <<chain2str(chain.new_chain)<<"\t"
                          <<chain2str(mods_res.new_chain)<<"\t"
                          <<mods_res.get_score()<<"\t"
                          <<mods_res.missing_start<<"\t"
@@ -727,6 +876,10 @@ private:
     char strand = 0;
     int start = MAX_INT;
     int end = 0;
+
+    bool check_ref = false;
+    std::string ref_fa_fname = "";
+    GFaSeqGet* seqid_seq = NULL;
 };
 
 // uses gffReader to read-in all transcripts
@@ -764,7 +917,7 @@ private:
     std::vector<TX> tx_vec;
 };
 
-int run(const std::string& gtf_fname,const std::string& out_fname){
+int run(const std::string& gtf_fname,const std::string& out_fname,const std::string& ref_fa_fname){
     std::ofstream out_stats_fp(out_fname+".stats");
     std::ofstream out_gtf_fp(out_fname+".gtf");
 
@@ -773,10 +926,15 @@ int run(const std::string& gtf_fname,const std::string& out_fname){
     // form bundles (all overlapping
 
     // load the reference GFF
-    Transcriptome transcriptome(gtf_fname);
+    Transcriptome transcriptome(gtf_fname); // TODO: if transcript has a cds - just report it unless better CDS available
     transcriptome.sort();
 
     Bundle bundle;
+
+    bool check_ref = !ref_fa_fname.empty();
+    if(check_ref){
+        bundle.set_ref(ref_fa_fname);
+    }
 
     out_stats_fp<<"tid\t"
                "new_tid\t"
@@ -796,7 +954,7 @@ int run(const std::string& gtf_fname,const std::string& out_fname){
                "missing_frags\t"
                "extra_frags"<<std::endl;
 
-    for(auto& t : transcriptome){
+    for(auto& t : transcriptome){ // TODO: now that we are adding transcripts to the custom transcriptome anyways - we can easily process separate GTFs (one input novel and a list of knowns)
         if(!bundle.can_add(t)){
             bundle.process(out_stats_fp,out_gtf_fp);
             bundle.clear();
@@ -819,15 +977,17 @@ int run(const std::string& gtf_fname,const std::string& out_fname){
 }
 
 enum Opt {INPUT     = 'i',
-          OUTPUT    = 'o'};
+          OUTPUT    = 'o',
+          REFERENCE = 'r'};
 
 int main(int argc, char** argv) {
 
     ArgParse args("orfanage");
     args.add_string(Opt::INPUT, "input", "", "input GTF", true);
     args.add_string(Opt::OUTPUT, "output", "", "output name", true);
+    args.add_string(Opt::REFERENCE,"reference","","reference fasta",false);
 
-    if (argc <= 1 || strcmp(argv[1], "--help") == 0) {
+    if(argc <= 1 || strcmp(argv[1], "--help") == 0){
         std::cerr << args.get_help() << std::endl;
         exit(1);
     }
@@ -845,7 +1005,49 @@ int main(int argc, char** argv) {
         }
     }
 
-    run(args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT));
+    // check that all files exist
+    std::ifstream if_ss;
+    if_ss.open(args.get_string(Opt::INPUT));
+    if (!if_ss){
+        std::cerr << "Input file does not exist!\n";
+        exit(2);
+    }
+    if_ss.close();
+
+    if(args.is_set(Opt::REFERENCE)){ // much from gpertea bamcons.cpp
+        std::ifstream rf_ss;
+        rf_ss.open(args.get_string(Opt::REFERENCE));
+        if (!rf_ss){
+            std::cerr << "Reference FASTA file does not exist!\n";
+            exit(2);
+        }
+        rf_ss.close();
+
+        // get potential fasta index file name
+        std::string fa_idx_fname = args.get_string(Opt::REFERENCE)+".fai";
+        GFastaIndex faIdx(args.get_string(Opt::REFERENCE).c_str(), fa_idx_fname.c_str());
+        if (!faIdx.hasIndex()){
+            std::cerr<<"No fasta index found for "<<fa_idx_fname<<". Building now"<<std::endl;
+            faIdx.buildIndex();
+            if (faIdx.getCount() == 0){
+                std::cerr<<"Error: no fasta records found!"<<std::endl;
+                exit(2);
+            }
+            FILE* fcreate = fopen(fa_idx_fname.c_str(), "w");
+            if (fcreate == NULL){
+                std::cerr<<"Error: cannot create fasta index: "<<fa_idx_fname<<std::endl;
+                exit(2);
+            }
+            if (faIdx.storeIndex(fcreate) < faIdx.getCount()){
+                std::cerr<<"Warning: error writing the index file!"<<std::endl;
+                exit(2);
+            }
+            std::cerr<<"FASTA index rebuilt."<<std::endl;
+        }
+    }
+
+    // run
+    run(args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT),args.get_string(Opt::REFERENCE));
 
     return 0;
 }

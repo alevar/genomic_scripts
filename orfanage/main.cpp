@@ -736,15 +736,24 @@ public:
         size_t stop_aa_pos = m.cds_aa.find('.');
         if(stop_aa_pos!=std::string::npos){ // stop codon was found
             size_t stop_nt_pos = stop_aa_pos*3;
+            size_t left_to_stop = stop_nt_pos; // number of positions left until the stop codon
             // find CDS piece in which the first nt of the stop codon was found
             if(this->strand=='+'){
-                for(auto& c : m.new_chain){
-
+                for(int i=0;i<m.new_chain.size();i++){
+                    uint cs = m.new_chain[i].first-this->start; // start coordinate of the chain with respect to the bundle start
+                    uint ce = m.new_chain[i].second-this->start; // end coordinate of the chain with respect to the bundle start
+                    size_t clen = (ce+1)-cs;
+                    if(left_to_stop<clen){ // found the cds segment with the stop codon
+                        m.new_chain[i].second -= left_to_stop;
+                    }
+                    left_to_stop-=clen;
                 }
             }
             else{ // strand=='-
 
             }
+
+            // TODO: test that the chain is broken correctly  when the stop codon is the first in the exon/last in the exon/etc
 
             // update info:
             // 1. length
@@ -755,6 +764,8 @@ public:
             // 6. aa sequence
 
             // TODO: add length of the original and fitted ORFs to the stats
+
+            // TODO: need a check if the CDS is no longer valid (0 aa) after stop codon detection (stop codon is first aa basically)
         }
     }
 

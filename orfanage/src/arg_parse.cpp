@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <vector>
 #include "arg_parse.h"
 
 ArgParse::ArgParse(std::string desc) {
@@ -173,6 +174,18 @@ bool ArgParse::add_double(char c, std::string name,
 
 }
 
+bool ArgParse::add_multi_string(char c, std::string name,
+                      std::string def, std::string desc="",bool required=false){
+    if (args_.count(c) > 0) {
+        return false;
+    }
+
+    Arg a = {Type::STRING, std::move(name), std::move(desc),def,required,false};
+    args_[c] = a;
+
+    return true;
+}
+
 bool ArgParse::add_string(char c, std::string name, 
                           std::string def, std::string desc="",bool required=false) {
     
@@ -212,6 +225,20 @@ double ArgParse::get_double(char c) {
 std::string ArgParse::get_string(char c) {
     Arg &a = args_[c];
     return a.value;
+}
+
+std::vector<std::string> ArgParse::get_multi_string(char c) {
+    Arg &a = args_[c];
+    std::vector<std::string> val;
+    std::string sub;
+    std::stringstream ss = std::stringstream(a.value);
+    while(std::getline(ss, sub, ',')){
+        if(sub.empty()){
+            continue;
+        }
+        val.push_back(sub);
+    }
+    return val;
 }
 
 bool ArgParse::is_set(char c){

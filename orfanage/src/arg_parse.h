@@ -33,6 +33,7 @@ class ArgParse {
         bool add_int(char c, std::string name, int def, std::string desc,bool required);
         bool add_double(char c, std::string name, double def, std::string desc,bool required);
         bool add_string(char c, std::string name, std::string def, std::string desc,bool required);
+        bool add_multi_string(char c, std::string name, std::string def, std::string desc, bool required);
 
         std::string get_name(char c);
         std::string get_desc(char c);
@@ -41,6 +42,7 @@ class ArgParse {
         int get_int(char c);
         double get_double(char c);
         std::string get_string(char c);
+        std::vector<std::string> get_multi_string(char c);
 
         bool is_set(char c);
 

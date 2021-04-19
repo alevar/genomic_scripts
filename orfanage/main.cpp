@@ -8,16 +8,36 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <map>
 
 #include <gclib/gff.h>
 #include <fstream>
 #include <gff_utils.h>
 #include "arg_parse.h"
 
+#include <libBigWig/bigWig.h>
+//#include <libBigWig/bwValues.c>
+//#include <libBigWig/io.c>
+//#include <libBigWig/bwWrite.c>
+//#include <libBigWig/bwRead.c>
+
 #define DBUF_LEN=1024;
 
 //typedef std::vector<std::pair<uint,uint>> CHAIN_TYPE;
 typedef std::vector<std::tuple<uint,uint,uint>> CDS_CHAIN_TYPE; // start,end,phase
+
+struct Globals{
+    std::ofstream out_stats_fp;
+    std::ofstream out_al_fp;
+    std::ofstream out_cds_stats_fp;
+    std::ofstream out_gtf_fp;
+    std::ofstream out_gtf_perfect_fp;
+    std::ofstream out_gtf_imperfect_fp;
+    std::ofstream out_gtf_nonoverlap_fp;
+
+    std::map<std::string,uint> fai; // seqid to length
+    std::pair<std::map<std::string,uint>::iterator,bool> fai_it;
+} globals;
 
 std::string chain2str(CDS_CHAIN_TYPE& chain){
     std::string res = "";
@@ -31,6 +51,14 @@ std::string chain2str(CDS_CHAIN_TYPE& chain){
         res = "-";
     }
     return res;
+}
+
+int chain_len(CDS_CHAIN_TYPE& chain){
+    int len=0;
+    for(auto& c : chain) {
+        len += (std::get<1>(c) + 1) - std::get<0>(c);
+    }
+    return len;
 }
 
 struct Mods{
@@ -52,7 +80,6 @@ struct Mods{
 
     std::string cds_nt = ""; // nucleotide sequence
     std::string cds_aa = ""; // translated amino-acid sequence
-    char expected_stop_codon = '.'; // amino acid coded by the three bases after the end of the CDS
     bool adjusted = false; // whether the chain has been adjusted to the first stop codon
 
     int get_score(){
@@ -70,7 +97,64 @@ struct Mods{
     }
 };
 
-void evaluate_fasta(Mods& res,const char* subseq,int bundle_start,char bundle_strand){
+const Mods empty_mod; // placeholder for whenever a comparison is needed to an empty Mods object
+
+// TODO: need start codon in addition to stop codon
+
+//void run_annotate_with_tracks(std::string& seqid,char strand,std::tuple<uint,uint,uint>& coords,bigWigFile_t *bw_files[7],Globals& globals){
+//
+//    float transcript_sum = 0.0;
+//    float transcript_power_sum = 0.0;
+//    float transcript_all_power_sum = 0.0;
+//    uint64_t transcript_power_count = 0;
+//
+////    // check whether chromosome exists in tracks
+////    const auto chrom_sizes_it = params.chrom_sizes.find(seqid);
+////    if (chrom_sizes_it == params.chrom_sizes.end())
+////    {
+////        t.phylo_score = NAN;
+////        t.phylo_power = NAN;
+////        // only report a missing sequence once
+////        if (missing_sequences.find(t.chr) == missing_sequences.end())
+////        {
+////            missing_sequences.insert(t.chr);
+////            printf(OUT_DEL OUT_INFO "Sequence %s from the GFF file does not occur in the tracks. Skipping ...\n" OUT_RESET, t.chr.c_str());
+////        }
+////    }
+////    else
+//    {
+//        globals.fai_it.first = globals.fai.find(seqid);
+//        uint64_t chr_len = 0;
+//        if(globals.fai_it.first!=globals.fai.end()){
+//            chr_len = globals.fai_it.first->second;
+//        }
+//
+//        uint8_t wig_phase;
+//        if (strand == '+')
+//            wig_phase = 0 + (c.phase + c.begin - 1) % 3;
+//        else
+//            wig_phase = 3 + (chr_len - c.end - 1 + c.phase + 1) % 3;
+//
+//        float cds_sum = 0.0;
+//
+//        float cds_power_sum = 0.0;
+//        float cds_all_power_sum = 0.0;
+//        uint64_t cds_power_count = 0;
+//
+//        // cds_sum and cds_power_sum are for the weighted computation (and only consider positions where a score is available)
+//        count_weighted_scores(cds_sum, cds_power_sum, cds_all_power_sum, cds_power_count, params.bw_files[wig_phase], params.bw_files[6], seqid.c_str(), c.begin - 1, c.end);
+//        c.phylo_score = cds_sum / cds_power_sum;
+//        // here we consider all positions, even if the confidence is below the threshold (when the tracks were computed)
+//        c.phylo_power = (cds_power_count == 0) ? 0 : cds_all_power_sum / cds_power_count;
+//
+//        transcript_sum += cds_sum;
+//        transcript_power_sum += cds_power_sum;
+//        transcript_all_power_sum += cds_all_power_sum;
+//        transcript_power_count += cds_power_count;
+//    }
+//}
+
+void evaluate_fasta(Mods& res,const char* subseq,int bundle_start,char bundle_strand,uint start_offset,uint end_offset){
     int stop_coord = 0;
     std::string stop_nts = "";
     if(bundle_strand=='+'){
@@ -81,35 +165,19 @@ void evaluate_fasta(Mods& res,const char* subseq,int bundle_start,char bundle_st
                 res.cds_nt+=subseq[i];
             }
         }
-        // now add the next three bases - that's where the stop codon is expected to be
-        uint stop_codon_start = std::get<1>(res.new_chain.back())-bundle_start;
-        uint stop_codon_end = 3+(std::get<1>(res.new_chain.back())-bundle_start);
-        for(uint i=stop_codon_start+1;i<=stop_codon_end;i++){
-            stop_nts+=subseq[i];
-        }
     }
     else{ // strand=='-'
         for(int ci=res.new_chain.size()-1;ci>=0;ci--){
-            uint cs = 3+(std::get<0>(res.new_chain[ci])-bundle_start); // -3 to adjust for the stop codon on -; start coordinate of the chain with respect to the bundle start
-            uint ce = 3+(std::get<1>(res.new_chain[ci])-bundle_start); // -3 to adjust for the stop codon on -; end coordinate of the chain with respect to the bundle start
+            uint cs = start_offset+(std::get<0>(res.new_chain[ci])-bundle_start);
+            uint ce = start_offset+(std::get<1>(res.new_chain[ci])-bundle_start);
             for (uint i=ce;i>=cs;i--) {
                 res.cds_nt+=ntComplement(subseq[i]);
             }
-        }
-        // now add the next three bases - that's where the stop codon is expected to be
-        uint stop_codon_start = 3+(std::get<0>(res.new_chain.front())-bundle_start);
-        uint stop_codon_end = stop_codon_start-3;
-        for(uint i=stop_codon_start-1;i>=stop_codon_end;i--){
-            stop_nts+=ntComplement(subseq[i]);
         }
     }
     int cds_len = 0;
     char* cdsaa = translateDNA(res.cds_nt.c_str(),cds_len,res.cds_nt.size());
     res.cds_aa = cdsaa;
-
-    int stop_len = 0;
-    char* stopaa = translateDNA(stop_nts.c_str(),stop_len,3);
-    res.expected_stop_codon = stopaa[0];
 
     return;
     // TODO: also for each chain - output a separate stats file describing
@@ -136,12 +204,15 @@ void adjust_stop(Mods& m,int bundle_start,char bundle_strand){ // adjust the cha
                 size_t clen = (ce+1)-cs;
                 if(left_to_stop<clen){ // found the cds segment with the stop codon
                     std::get<1>(m.new_chain[i]) = (std::get<0>(m.new_chain[i])+left_to_stop)-1;
-                    if(i<m.new_chain.size()-1){
+                    if(std::get<1>(m.new_chain[i])<std::get<0>(m.new_chain[i])){ // this case happens when the stop codon starts at the start of the 'i' exon
+                        i--;
+                    }
+                    int chain_len = m.new_chain.size();
+                    if(i<chain_len-1){
                         m.new_chain.erase(m.new_chain.begin()+i+1,m.new_chain.end());
                     }
                     m.cds_nt.erase(m.cds_nt.begin()+stop_nt_pos,m.cds_nt.end());
                     m.cds_aa.erase(m.cds_aa.begin()+stop_aa_pos,m.cds_aa.end());
-                    m.expected_stop_codon = '.'; // since we found a stop codon and adjust with respect to it - we can reset here
                     m.adjusted = true;
                     break;
                 }
@@ -149,25 +220,28 @@ void adjust_stop(Mods& m,int bundle_start,char bundle_strand){ // adjust the cha
             }
         }
         else{ // strand=='-
-            left_to_stop=(m.cds_nt.size()-left_to_stop)+3; // from the end due to reverse complement; +3 since due to reversal the last base of stop codon is now in front
             for(int i=m.new_chain.size()-1;i>=0;i--){
                 uint cs = std::get<0>(m.new_chain[i])-bundle_start; // start coordinate of the chain with respect to the bundle start
                 uint ce = std::get<1>(m.new_chain[i])-bundle_start; // end coordinate of the chain with respect to the bundle start
                 size_t clen = (ce+1)-cs;
                 if(left_to_stop<clen){ // found the cds segment with the stop codon
-                    std::get<0>(m.new_chain[i]) = std::get<1>(m.new_chain[i])-left_to_stop;
+                    std::get<0>(m.new_chain[i]) = (std::get<1>(m.new_chain[i])-left_to_stop)+1;
+                    if(std::get<1>(m.new_chain[i])<std::get<0>(m.new_chain[i])){ // this case happens when the stop codon starts at the start of the 'i' exon
+                        i++;
+                    }
                     if(i>0) {
-                        uint last_to_remove = i-1;
-                        if(last_to_remove==0){
+                        if(i==0){
                             m.new_chain.erase(m.new_chain.begin());
                         }
+                        else if(i==m.new_chain.size()){
+                            m.new_chain.clear();
+                        }
                         else{
-                            m.new_chain.erase(m.new_chain.begin(),m.new_chain.begin()+last_to_remove);
+                            m.new_chain.erase(m.new_chain.begin(),m.new_chain.begin()+i);
                         }
                     }
                     m.cds_nt.erase(m.cds_nt.begin()+stop_nt_pos,m.cds_nt.end());
                     m.cds_aa.erase(m.cds_aa.begin()+stop_aa_pos,m.cds_aa.end());
-                    m.expected_stop_codon = '.'; // since we found a stop codon and adjust with respect to it - we can reset here
                     m.adjusted = true;
                     break;
                 }
@@ -189,9 +263,6 @@ void adjust_stop(Mods& m,int bundle_start,char bundle_strand){ // adjust the cha
 
 void compare_aa(Mods& ref_res, Mods& new_res){
     // check if starts with start codon - if not - check the first one
-    if(ref_res.expected_stop_codon == new_res.expected_stop_codon){
-
-    }
 
     // if the original chain contains an in-frame stop codon at the same position as the fitted chain - do not re-adjust
 
@@ -265,6 +336,10 @@ struct TX{
                 cdsacc+=std::get<1>(cds)-std::get<0>(cds)+1;
             }
         }
+    }
+
+    int get_pppscore(std::tuple<uint,uint,uint>& coord){
+
     }
 
     int exon_count() const{
@@ -605,25 +680,24 @@ struct TX{
         return;
     }
 
-    bool fit_new(Mods& orig_cds_mod,const char* bundle_seq, int bundle_start){ // computes the intersection of own exons and the chain
+    Mods fit_new(Mods& orig_cds_mod,const char* bundle_seq, int bundle_start,uint start_offset,uint end_offset){ // computes the intersection of own exons and the chain
         this->mods.push_back(Mods());
         this->mods.back().orig_cds_tid = orig_cds_mod.orig_cds_tid;
         this->mods.back().orig_chain = orig_cds_mod.new_chain;
         uint cut_len = cut(std::get<0>(orig_cds_mod.new_chain.front()),std::get<1>(orig_cds_mod.new_chain.back()),this->mods.back().new_chain);
-        if(cut_len==0){ // no overlap found - create a dummy chain which will never overlap anything. This way the Mods will still get populated with data and will make it possible to filter
+        if(cut_len<3){ // no overlap found - create a dummy chain which will never overlap anything. This way the Mods will still get populated with data and will make it possible to filter
             this->mods.back().new_chain = CDS_CHAIN_TYPE{std::make_tuple(0,0,0)};
         }
         else{
             if(bundle_seq!=NULL){ // check_ref flag toggled
-                evaluate_fasta(this->mods.back(),bundle_seq,bundle_start,this->strand);
+                evaluate_fasta(this->mods.back(),bundle_seq,bundle_start,this->strand,start_offset,end_offset);
                 adjust_stop(this->mods.back(),bundle_start,this->strand);
-                // redo comparison
-                std::cout<<">"<<this->get_tid()<<std::endl;
-                std::cout<<this->mods.back().cds_nt<<std::endl;
-                std::cout<<this->mods.back().cds_aa<<std::endl;
-                std::cout<<chain2str(this->mods.back().new_chain)<<std::endl;
                 compare_aa(orig_cds_mod,this->mods.back());
             }
+        }
+
+        if(this->mods.back().new_chain.empty()){ // no matching chain - likely due to stop-codon
+            this->mods.back().new_chain = CDS_CHAIN_TYPE{std::make_tuple(0,0,0)};
         }
 
         // now we can take the cut piece and directly compare it to the desired CDS counting any changes
@@ -633,7 +707,7 @@ struct TX{
             assign_phase(this->mods.back());
         }
 
-        return !this->mods.back().new_chain.empty(); // returns true if there are entries in the fitted chain
+        return this->mods.back();
     }
 
     bool overlap(uint s, uint e) {
@@ -676,47 +750,39 @@ struct TX{
         return res;
     }
 
-    std::string get_gtf(){ // TODO:
-
-    }
-
-    std::string get_all_gtf(){
-        if(this->mods.empty()){ // no mods available - just output what's already there
-            return this->get_gtf();
-        }
-
+    std::string get_gtf(std::string& tid,Mods& m){
         std::string gtf_str = "";
-        uint chain_i=0;
-        std::string cur_tid = "";
-        for(auto& m : this->mods){
-            cur_tid = this->tid+":-:"+std::to_string(chain_i);
-            // get transcript line
+        // get transcript line
+        gtf_str+=this->seqid+"\t"
+                 +this->source+"\t"
+                 +"transcript"+"\t"
+                 +std::to_string(this->get_start())+"\t"
+                 +std::to_string(this->get_end())+"\t"
+                 +"."+"\t"
+                 +this->strand+"\t"
+                 +"."+"\t"
+                 +"transcript_id \""+tid+"\"; "
+                 +this->get_attributes();
+        if(m.new_chain.empty()){
+            gtf_str+="\n";
+        }
+        else{
+            gtf_str+=m.get_desc()+"\n";
+        }
+        // get exon lines
+        for(auto& e : this->exons){
             gtf_str+=this->seqid+"\t"
                      +this->source+"\t"
-                     +"transcript"+"\t"
-                     +std::to_string(this->get_start())+"\t"
-                     +std::to_string(this->get_end())+"\t"
+                     +"exon"+"\t"
+                     +std::to_string(std::get<0>(e))+"\t"
+                     +std::to_string(std::get<1>(e))+"\t"
                      +"."+"\t"
                      +this->strand+"\t"
                      +"."+"\t"
-                     +"transcript_id \""+cur_tid+"\"; "
-                     +this->get_attributes()
-                     +m.get_desc()+"\n";
-            // get exon lines
-            for(auto& e : this->exons){
-                gtf_str+=this->seqid+"\t"
-                         +this->source+"\t"
-                         +"exon"+"\t"
-                         +std::to_string(std::get<0>(e))+"\t"
-                         +std::to_string(std::get<1>(e))+"\t"
-                         +"."+"\t"
-                         +this->strand+"\t"
-                         +"."+"\t"
-                         +"transcript_id \""+cur_tid+"\"; "
-                         +this->get_attributes()+"\n";
-            }
-
-            // if CDS is fitted - get CDS coordinates based on CDS start and end
+                     +"transcript_id \""+tid+"\"; "
+                     +this->get_attributes()+"\n";
+        }
+        if(!m.new_chain.empty()){
             for(auto& c : m.new_chain){
                 gtf_str+=this->seqid+"\t"
                          +this->source+"\t"
@@ -726,9 +792,25 @@ struct TX{
                          +"."+"\t"
                          +this->strand+"\t"
                          +std::to_string(std::get<2>(c))+"\t"
-                         +"transcript_id \""+cur_tid+"\"; "
+                         +"transcript_id \""+tid+"\"; "
                          +this->get_attributes()+"\n";
             }
+        }
+        gtf_str.pop_back();
+        return gtf_str;
+    }
+
+    std::string get_all_gtf(){
+        if(this->mods.empty()){ // no mods available - just output what's already there
+            return this->get_gtf(this->tid, const_cast<Mods &>(empty_mod));
+        }
+
+        std::string gtf_str = "";
+        uint chain_i=0;
+        std::string cur_tid = "";
+        for(auto& m : this->mods){
+            cur_tid = this->tid+":-:"+std::to_string(chain_i);
+            gtf_str+=get_gtf(cur_tid,m)+"\n";
             chain_i++;
         }
 
@@ -824,7 +906,7 @@ public:
         std::cout<<"------"<<std::endl;
     }
 
-    std::string get_nt(CDS_CHAIN_TYPE& chain, const char* subseq){
+    std::string get_nt(CDS_CHAIN_TYPE& chain, const char* subseq,uint start_offset,uint end_offset){
         std::string cds_nt = "";
         if(this->strand=='+'){
             for(auto& c : chain){
@@ -837,8 +919,8 @@ public:
         }
         else{ // strand=='-'
             for(int ci=chain.size()-1;ci>=0;ci--){
-                uint cs = 3+(std::get<0>(chain[ci])-this->start); // -3 to adjust for the stop codon on -; start coordinate of the chain with respect to the bundle start
-                uint ce = 3+(std::get<1>(chain[ci])-this->start); // -3 to adjust for the stop codon on -; end coordinate of the chain with respect to the bundle start
+                uint cs = start_offset+(std::get<0>(chain[ci])-this->start); // -3 to adjust for the stop codon on -; start coordinate of the chain with respect to the bundle start
+                uint ce = start_offset+(std::get<1>(chain[ci])-this->start); // -3 to adjust for the stop codon on -; end coordinate of the chain with respect to the bundle start
                 for (uint i=ce;i>=cs;i--) {
                     cds_nt+=ntComplement(subseq[i]);
                 }
@@ -847,25 +929,42 @@ public:
         return cds_nt;
     }
 
-    std::string get_aa(CDS_CHAIN_TYPE& chain, const char* subseq){
-        std::string cds_nt = get_nt(chain,subseq);
+    std::string get_aa(CDS_CHAIN_TYPE& chain, const char* subseq,uint start_offset,uint end_offset){
+        std::string cds_nt = get_nt(chain,subseq,start_offset,end_offset);
         int cds_len = 0;
         std::string cds_aa = translateDNA(cds_nt.c_str(),cds_len,cds_nt.size());
         return cds_aa;
     }
 
-    int process(std::ofstream& out_al_fp,std::ofstream& out_cds_stats_fp,std::ofstream& out_gtf_fp){
+    int process(Globals& globals){
         const char* bundle_seq = NULL;
+        uint start_offset = 0;
+        uint end_offset = 0;
         if(this->check_ref){
             this->seqid_seq=fastaSeqGet(gfasta, this->seqid.c_str());
             if(this->seqid_seq==NULL){
                 std::cerr<<"Error: no genomic sequence available (check -r option!)."<<std::endl;
             }
             int bundle_start = this->start;
-            if(this->strand=='-'){
-                bundle_start-=3;
+            start_offset = std::min(3,this->start-1); // if start < 3 - will compensate; -1 is to compensate for the 1-based used by gfaseqget
+            end_offset = std::min(3,this->seqid_seq->getseqlen()-this->end);
+            if(start_offset<3 || end_offset<3){
+                std::cout<<"found"<<std::endl;
             }
-            int bundle_len = ((this->end+1)-this->start)+3;
+            if(this->strand=='-'){
+                bundle_start-=start_offset;
+            }
+            if(start_offset>3 || end_offset>3){
+                std::cerr<<"shouldn't happend"<<std::endl;
+                exit(-1);
+            }
+            int bundle_len = this->end-this->start;
+            if(this->strand=='+'){
+                bundle_len+=end_offset;
+            }
+            else{
+                bundle_len+=start_offset;
+            }
             if(bundle_start+bundle_len>seqid_seq->getseqlen() || bundle_start<0){
                 std::cerr<<"bundle+stop codon extends past the end of the reference sequence"<<std::endl;
                 exit(2);
@@ -886,7 +985,9 @@ public:
                     m.orig_chain = cur_cds_chain;
                     m.new_chain = cur_cds_chain;
                     m.orig_cds_tid = tx.get_tid();
-                    evaluate_fasta(m,bundle_seq,this->start,this->strand);
+                    if(bundle_seq!=NULL){
+                        evaluate_fasta(m,bundle_seq,this->start,this->strand,start_offset,end_offset);
+                    }
                     cds_chains.push_back(m);
                 }
             }
@@ -894,10 +995,12 @@ public:
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
         for(auto& tx : this->txs){
+            std::string cur_tid = tx.get_tid();
             if(cds_chains.empty()){
-                out_gtf_fp<<tx.get_all_gtf();
+                globals.out_gtf_fp<<tx.get_gtf(cur_tid,const_cast<Mods &>(empty_mod))<<std::endl;
+                globals.out_gtf_nonoverlap_fp<<tx.get_gtf(cur_tid, const_cast<Mods &>(empty_mod))<<std::endl;
 
-                out_al_fp<<tx.get_tid()<<"\t"
+                globals.out_al_fp<<tx.get_tid()<<"\t"
                          <<tx.get_tid()<<"\t"
                          <<"-\t"
                          <<tx.get_seqid()<<"\t"
@@ -915,13 +1018,29 @@ public:
                          <<"-\t"
                          <<"-"<<std::endl;
             }
-            // TODO: when a premature stop-codon is found - needs to be stored as a separate stat
-            for(auto& chain : cds_chains){
-                tx.fit_new(chain,bundle_seq,this->start);
-//                tx.clear_fitted_cds(); // TODO: check that removal doesn't mess things up...  prepare for the new fitting since we wrote everything we needed
+            else{
+                // TODO: when a premature stop-codon is found - needs to be stored as a separate stat
+
+                // find the best chain fit
+                Mods longest_perfect_mod;
+                int longest_perfect_mod_len = 0;
+                for(auto& chain : cds_chains){
+                    Mods new_mod = tx.fit_new(chain,bundle_seq,this->start,start_offset,end_offset);
+                    int new_mod_len = chain_len(new_mod.new_chain);
+                    if(new_mod.get_score()==0 && new_mod_len>longest_perfect_mod_len){
+                        longest_perfect_mod = new_mod;
+                        longest_perfect_mod_len = new_mod_len;
+                    }
+                }
+                globals.out_gtf_fp<<tx.get_all_gtf()<<std::endl;
+                globals.out_al_fp<<tx.get_stats_str()<<std::endl;
+                if(longest_perfect_mod_len>0){ // found perfect fit
+                    globals.out_gtf_perfect_fp<<tx.get_gtf(cur_tid,longest_perfect_mod)<<std::endl;
+                }
+                else{ // no perfect fits found
+                    globals.out_gtf_imperfect_fp<<tx.get_gtf(cur_tid, const_cast<Mods &>(empty_mod))<<std::endl;
+                }
             }
-            out_gtf_fp<<tx.get_all_gtf()<<std::endl;
-            out_al_fp<<tx.get_stats_str()<<std::endl;
         }
 
         return 0;
@@ -992,10 +1111,13 @@ private:
     std::vector<TX> tx_vec;
 };
 
-int run(const std::vector<std::string>& known_gtf_fnames, const std::string& novel_gtf_fname,const std::string& out_fname,const std::string& ref_fa_fname){
-    std::ofstream out_stats_fp(out_fname+".stats");
-    std::ofstream out_cds_stats_fp(out_fname+".cds");
-    std::ofstream out_gtf_fp(out_fname+".gtf");
+int run(const std::vector<std::string>& known_gtf_fnames, const std::string& novel_gtf_fname,const std::string& out_fname,const std::string& ref_fa_fname,const std::string& ppp_track_fname){
+    globals.out_stats_fp.open(out_fname+".stats");
+    globals.out_cds_stats_fp.open(out_fname+".cds");
+    globals.out_gtf_fp.open(out_fname+".all.gtf");
+    globals.out_gtf_perfect_fp.open(out_fname+".perfect.gtf");
+    globals.out_gtf_imperfect_fp.open(out_fname+".imperfect.gtf");
+    globals.out_gtf_nonoverlap_fp.open(out_fname+".nonoverlapping.gtf");
 
     // read from both GTF streams simultaneously
     // only consider CDS from the reference and exons from the novel
@@ -1015,7 +1137,7 @@ int run(const std::vector<std::string>& known_gtf_fnames, const std::string& nov
         bundle.set_ref(ref_fa_fname);
     }
 
-    out_stats_fp<<"tid\t"
+    globals.out_stats_fp<<"tid\t"
                "new_tid\t"
                "cds_tid\t"
                "seqid\t"
@@ -1033,7 +1155,7 @@ int run(const std::vector<std::string>& known_gtf_fnames, const std::string& nov
                "missing_frags\t"
                "extra_frags"<<std::endl;
 
-    out_cds_stats_fp<<"cds_tid\t"
+    globals.out_cds_stats_fp<<"cds_tid\t"
                       "chain\t"
                       "overlapping_txs\t"
                       "perfect_txs\t"
@@ -1045,7 +1167,7 @@ int run(const std::vector<std::string>& known_gtf_fnames, const std::string& nov
 
     for(auto& t : transcriptome){
         if(!bundle.can_add(t)){
-            bundle.process(out_stats_fp,out_cds_stats_fp,out_gtf_fp);
+            bundle.process(globals);
             bundle.clear();
             bundle.add_tx(t);
         }
@@ -1054,15 +1176,18 @@ int run(const std::vector<std::string>& known_gtf_fnames, const std::string& nov
         }
     }
     // handle the final bundle
-    bundle.process(out_stats_fp,out_cds_stats_fp,out_gtf_fp);
+    bundle.process(globals);
 
     // questions:
     // 1. any transcripts contain multiple CDSs? which one to chose?
     // 2. what to do with minor modifications? (no frame shifts)
 
-    out_stats_fp.close();
-    out_cds_stats_fp.close();
-    out_gtf_fp.close();
+    globals.out_stats_fp.close();
+    globals.out_cds_stats_fp.close();
+    globals.out_gtf_fp.close();
+    globals.out_gtf_perfect_fp.close();
+    globals.out_gtf_imperfect_fp.close();
+    globals.out_gtf_nonoverlap_fp.close();
     return 0;
 }
 
@@ -1071,7 +1196,8 @@ enum Opt {CDS       = 'c',
           OUTPUT    = 'o',
           REFERENCE = 'r',
           CLEANREF  = 'c',
-          FILTER    = 'f'};
+          FILTER    = 'f',
+          PPPTRACK  = 'p'};
 
 int main(int argc, char** argv) {
 
@@ -1082,6 +1208,7 @@ int main(int argc, char** argv) {
     args.add_string(Opt::REFERENCE,"reference","","Reference fasta",false);
     args.add_flag(Opt::CLEANREF,"cleanref","Remove transcripts which contain mistakes in pre-annotated CDS",false);
     args.add_flag(Opt::FILTER,"filter","Select the best fitting CDS where possible",false);
+    args.add_string(Opt::PPPTRACK,"ppptrack","","PhyloCSF track",false);
 
     if(argc <= 1 || strcmp(argv[1], "--help") == 0){
         std::cerr << args.get_help() << std::endl;
@@ -1152,8 +1279,64 @@ int main(int argc, char** argv) {
         }
     }
 
+    // check phylocsf track if set
+    if(args.is_set(Opt::PPPTRACK)){
+        std::ifstream ppp_ss;
+        ppp_ss.open(args.get_string(Opt::PPPTRACK));
+        if (!ppp_ss){
+            std::cerr << "PhyloCSF track file does not exist! "<<args.get_string(Opt::PPPTRACK)<<std::endl;
+            exit(2);
+        }
+        ppp_ss.close();
+
+
+        // TESTS
+        bigWigFile_t *bw_files[7] = { NULL };
+        std::string bw_path = args.get_string(Opt::PPPTRACK);
+        const size_t bw_path_suffix_pos = bw_path.find("+1");
+        if (bw_path_suffix_pos == std::string::npos)
+        {
+            std::cerr<<"Could not find '+1' in tracks file name. Expecting a name like 'PhyloCSF+1.bw'."<<std::endl;
+            exit(3);
+        }
+        for (uint16_t i = 0; i < 7; ++i)
+        {
+            std::string suffix;
+            if (i == 6)
+                suffix = "power";
+            else
+                suffix = ((i < 3) ? "+" : "-") + std::to_string((i % 3) + 1);
+            bw_path.replace(bw_path_suffix_pos, 2, suffix); // NOTE: length of "+1" is 2
+
+            bw_files[i] = bwOpen(const_cast<char * >(bw_path.c_str()), NULL, "r");
+            if (!bw_files[i])
+            {
+                // check whether the user has used an unindexed wig file, then print a useful hint
+                if (access(bw_path.c_str(), F_OK) == 0 &&
+                    bw_path.size() >= 4 && bw_path.compare(bw_path.size() - 4, 4, ".wig") == 0)
+                {
+                    std::cerr<<"An error occurred while opening the PhyloCSF file '%s'."<<bw_path.c_str()<<std::endl;
+                    std::cerr<<"It seems you provided a *.wig file. You need to simply index them first with wigToBigWig and then use the *.bw files."<<std::endl;
+                    exit(3);
+                }
+                else
+                {
+                    std::cerr<<"Could not find PhyloCSF track file '%s'."<<bw_path.c_str()<<std::endl;
+                    exit(3);
+                }
+            }
+        }
+
+//        chromList_t *chr_list = bwReadChromList(bw_files[0]);
+//        for (int64_t i = 0; i < chr_list->nKeys; ++i)
+//        {
+//            std::map<std::string, uint64_t> chrom_sizes;
+//            chrom_sizes.insert(std::make_pair(chr_list->chrom[i], chr_list->len[i]));
+//        }
+    }
+
     // run
-    run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT),args.get_string(Opt::REFERENCE));
+    run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT),args.get_string(Opt::REFERENCE),args.get_string(Opt::PPPTRACK));
 
     return 0;
 }

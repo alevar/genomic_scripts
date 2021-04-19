@@ -15,7 +15,7 @@
 #include <gff_utils.h>
 #include "arg_parse.h"
 
-#include <libBigWig/bigWig.h>
+//#include <libBigWig/bigWig.h>
 //#include <libBigWig/bwValues.c>
 //#include <libBigWig/io.c>
 //#include <libBigWig/bwWrite.c>
@@ -28,7 +28,6 @@ typedef std::vector<std::tuple<uint,uint,uint>> CDS_CHAIN_TYPE; // start,end,pha
 
 struct Globals{
     std::ofstream out_stats_fp;
-    std::ofstream out_al_fp;
     std::ofstream out_cds_stats_fp;
     std::ofstream out_gtf_fp;
     std::ofstream out_gtf_perfect_fp;
@@ -248,17 +247,11 @@ void adjust_stop(Mods& m,int bundle_start,char bundle_strand){ // adjust the cha
                 left_to_stop-=clen;
             }
         }
-
-        // TODO: test that the chain is broken correctly  when the stop codon is the first in the exon/last in the exon/etc
-        //    also on the + and - strands
-
-        // update info:
-        // 1. length
-
-        // TODO: add length of the original and fitted ORFs to the stats
-
-        // TODO: need a check if the CDS is no longer valid (0 aa) after stop codon detection (stop codon is first aa basically)
     }
+}
+
+void adjust_start(Mods& m,int bundle_start,char bundle_strand){ // adjust the chain coordinates to start at the first start codon
+
 }
 
 void compare_aa(Mods& ref_res, Mods& new_res){
@@ -274,6 +267,29 @@ void compare_aa(Mods& ref_res, Mods& new_res){
 struct TX{
     TX(GffObj* tx,uint idx):
                             cds_start(tx->hasCDS() ? tx->CDstart : 0),cds_end(tx->hasCDS() ? tx->CDend : 0){
+        if(tx->hasCDS()){
+            switch(tx->CDphase){
+                case '0':
+                    this->cds_phase=0;
+                    break;
+                case '1':
+                    this->cds_phase=1;
+                    break;
+                case '2':
+                    this->cds_phase=2;
+                    break;
+                case '3':
+                    this->cds_phase=3;
+                    break;
+                case '.':
+                    this->cds_phase=0;
+                    break;
+                default:
+                    std::cerr<<"unknown CDS phase for the initial segment"<<std::endl;
+                    exit(-1);
+            }
+        }
+
         this->id = idx;
         this->tid = tx->getID();
         this->seqid = tx->getGSeqName();
@@ -396,27 +412,29 @@ struct TX{
         if(!this->is_coding){
             return;
         }
-        bool stop=false; // signals to break iteration since the end was found
+        if(this->cds_phase!=0){
+            if(this->strand=='+'){
+                this->cds_start+=cds_phase;
+            }
+            else{
+                this->cds_end-=cds_phase;
+            }
+        }
         for(auto& e : this->exons){
-            if(this->cds_start > std::get<1>(e)){ // skip non-coding exons
+
+            uint es=std::get<0>(e);
+            uint ee=std::get<1>(e);
+            if(this->cds_end<es || this->cds_start>ee){
                 continue;
             }
-            uint cur_exon_coding_start = std::get<0>(e);
-            uint cur_exon_coding_end = std::get<1>(e);
-
-            if(this->cds_start > std::get<0>(e)){
-                cur_exon_coding_start = this->cds_start;
+            if(this->cds_start>=es && this->cds_start<=ee){
+                es = cds_start;
+            }
+            if(this->cds_end>=es && this->cds_end<=ee){
+                ee=this->cds_end;
             }
 
-            if(this->cds_end < std::get<1>(e)){
-                cur_exon_coding_end = this->cds_end;
-                stop=true;
-            }
-
-            chain.push_back(std::make_tuple(cur_exon_coding_start,cur_exon_coding_end,0));
-            if(stop){
-                break;
-            }
+            chain.push_back(std::make_tuple(es,ee,0));
         }
     }
 
@@ -827,6 +845,7 @@ private:
     CDS_CHAIN_TYPE exons;
     uint cds_start;
     uint cds_end;
+    char cds_phase;
     bool is_coding = false;
     std::string source = "";
     std::string mods_gtf_str = "";
@@ -948,14 +967,14 @@ public:
             int bundle_start = this->start;
             start_offset = std::min(3,this->start-1); // if start < 3 - will compensate; -1 is to compensate for the 1-based used by gfaseqget
             end_offset = std::min(3,this->seqid_seq->getseqlen()-this->end);
-            if(start_offset<3 || end_offset<3){
-                std::cout<<"found"<<std::endl;
-            }
+//            if(start_offset<3 || end_offset<3){
+//                std::cout<<"found"<<std::endl;
+//            }
             if(this->strand=='-'){
                 bundle_start-=start_offset;
             }
             if(start_offset>3 || end_offset>3){
-                std::cerr<<"shouldn't happend"<<std::endl;
+                std::cerr<<"shouldn't happen"<<std::endl;
                 exit(-1);
             }
             int bundle_len = this->end-this->start;
@@ -977,6 +996,9 @@ public:
         std::pair<std::set<CDS_CHAIN_TYPE>::iterator,bool> cit;
         for(auto& tx : this->txs){
             if(tx.has_cds()){
+                if(std::strcmp(tx.get_tid().c_str(),"ENST00000379101.8")==0){
+                    std::cout<<"found"<<std::endl;
+                }
                 CDS_CHAIN_TYPE cur_cds_chain;
                 tx.build_cds_chain(cur_cds_chain);
                 cit = cur_cds_chains.insert(cur_cds_chain);
@@ -995,12 +1017,15 @@ public:
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
         for(auto& tx : this->txs){
+            if(std::strcmp(tx.get_tid().c_str(),"ENST00000379101.8")==0){
+                std::cout<<"found"<<std::endl;
+            }
             std::string cur_tid = tx.get_tid();
             if(cds_chains.empty()){
                 globals.out_gtf_fp<<tx.get_gtf(cur_tid,const_cast<Mods &>(empty_mod))<<std::endl;
                 globals.out_gtf_nonoverlap_fp<<tx.get_gtf(cur_tid, const_cast<Mods &>(empty_mod))<<std::endl;
 
-                globals.out_al_fp<<tx.get_tid()<<"\t"
+                globals.out_stats_fp<<tx.get_tid()<<"\t"
                          <<tx.get_tid()<<"\t"
                          <<"-\t"
                          <<tx.get_seqid()<<"\t"
@@ -1033,7 +1058,7 @@ public:
                     }
                 }
                 globals.out_gtf_fp<<tx.get_all_gtf()<<std::endl;
-                globals.out_al_fp<<tx.get_stats_str()<<std::endl;
+                globals.out_stats_fp<<tx.get_stats_str()<<std::endl;
                 if(longest_perfect_mod_len>0){ // found perfect fit
                     globals.out_gtf_perfect_fp<<tx.get_gtf(cur_tid,longest_perfect_mod)<<std::endl;
                 }
@@ -1279,53 +1304,53 @@ int main(int argc, char** argv) {
         }
     }
 
-    // check phylocsf track if set
-    if(args.is_set(Opt::PPPTRACK)){
-        std::ifstream ppp_ss;
-        ppp_ss.open(args.get_string(Opt::PPPTRACK));
-        if (!ppp_ss){
-            std::cerr << "PhyloCSF track file does not exist! "<<args.get_string(Opt::PPPTRACK)<<std::endl;
-            exit(2);
-        }
-        ppp_ss.close();
+//    // check phylocsf track if set
+//    if(args.is_set(Opt::PPPTRACK)){
+//        std::ifstream ppp_ss;
+//        ppp_ss.open(args.get_string(Opt::PPPTRACK));
+//        if (!ppp_ss){
+//            std::cerr << "PhyloCSF track file does not exist! "<<args.get_string(Opt::PPPTRACK)<<std::endl;
+//            exit(2);
+//        }
+//        ppp_ss.close();
 
 
-        // TESTS
-        bigWigFile_t *bw_files[7] = { NULL };
-        std::string bw_path = args.get_string(Opt::PPPTRACK);
-        const size_t bw_path_suffix_pos = bw_path.find("+1");
-        if (bw_path_suffix_pos == std::string::npos)
-        {
-            std::cerr<<"Could not find '+1' in tracks file name. Expecting a name like 'PhyloCSF+1.bw'."<<std::endl;
-            exit(3);
-        }
-        for (uint16_t i = 0; i < 7; ++i)
-        {
-            std::string suffix;
-            if (i == 6)
-                suffix = "power";
-            else
-                suffix = ((i < 3) ? "+" : "-") + std::to_string((i % 3) + 1);
-            bw_path.replace(bw_path_suffix_pos, 2, suffix); // NOTE: length of "+1" is 2
-
-            bw_files[i] = bwOpen(const_cast<char * >(bw_path.c_str()), NULL, "r");
-            if (!bw_files[i])
-            {
-                // check whether the user has used an unindexed wig file, then print a useful hint
-                if (access(bw_path.c_str(), F_OK) == 0 &&
-                    bw_path.size() >= 4 && bw_path.compare(bw_path.size() - 4, 4, ".wig") == 0)
-                {
-                    std::cerr<<"An error occurred while opening the PhyloCSF file '%s'."<<bw_path.c_str()<<std::endl;
-                    std::cerr<<"It seems you provided a *.wig file. You need to simply index them first with wigToBigWig and then use the *.bw files."<<std::endl;
-                    exit(3);
-                }
-                else
-                {
-                    std::cerr<<"Could not find PhyloCSF track file '%s'."<<bw_path.c_str()<<std::endl;
-                    exit(3);
-                }
-            }
-        }
+//        // TESTS
+//        bigWigFile_t *bw_files[7] = { NULL };
+//        std::string bw_path = args.get_string(Opt::PPPTRACK);
+//        const size_t bw_path_suffix_pos = bw_path.find("+1");
+//        if (bw_path_suffix_pos == std::string::npos)
+//        {
+//            std::cerr<<"Could not find '+1' in tracks file name. Expecting a name like 'PhyloCSF+1.bw'."<<std::endl;
+//            exit(3);
+//        }
+//        for (uint16_t i = 0; i < 7; ++i)
+//        {
+//            std::string suffix;
+//            if (i == 6)
+//                suffix = "power";
+//            else
+//                suffix = ((i < 3) ? "+" : "-") + std::to_string((i % 3) + 1);
+//            bw_path.replace(bw_path_suffix_pos, 2, suffix); // NOTE: length of "+1" is 2
+//
+//            bw_files[i] = bwOpen(const_cast<char * >(bw_path.c_str()), NULL, "r");
+//            if (!bw_files[i])
+//            {
+//                // check whether the user has used an unindexed wig file, then print a useful hint
+//                if (access(bw_path.c_str(), F_OK) == 0 &&
+//                    bw_path.size() >= 4 && bw_path.compare(bw_path.size() - 4, 4, ".wig") == 0)
+//                {
+//                    std::cerr<<"An error occurred while opening the PhyloCSF file '%s'."<<bw_path.c_str()<<std::endl;
+//                    std::cerr<<"It seems you provided a *.wig file. You need to simply index them first with wigToBigWig and then use the *.bw files."<<std::endl;
+//                    exit(3);
+//                }
+//                else
+//                {
+//                    std::cerr<<"Could not find PhyloCSF track file '%s'."<<bw_path.c_str()<<std::endl;
+//                    exit(3);
+//                }
+//            }
+//        }
 
 //        chromList_t *chr_list = bwReadChromList(bw_files[0]);
 //        for (int64_t i = 0; i < chr_list->nKeys; ++i)
@@ -1333,7 +1358,7 @@ int main(int argc, char** argv) {
 //            std::map<std::string, uint64_t> chrom_sizes;
 //            chrom_sizes.insert(std::make_pair(chr_list->chrom[i], chr_list->len[i]));
 //        }
-    }
+//    }
 
     // run
     run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT),args.get_string(Opt::REFERENCE),args.get_string(Opt::PPPTRACK));

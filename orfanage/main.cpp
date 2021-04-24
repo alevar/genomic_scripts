@@ -77,6 +77,9 @@ struct Mods{
     std::string cds_nt = ""; // nucleotide sequence
     std::string cds_aa = ""; // translated amino-acid sequence
     char next_codon = '-';
+
+    std::tuple<std::string,char,std::vector<int>> start_codon;
+
     bool adjusted = false;
 
     int get_score(){
@@ -207,26 +210,31 @@ bool check_valid_aa(Mods& m){
     return true;
 }
 
-std::string next_codon_nt_nonrevcomp(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,uint start_offset,uint subseq_len,bool forward){
+// return nts and the coordinates
+std::pair<std::string,std::vector<int>> next_codon_nt_nonrevcomp(uint last_position,Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,uint start_offset,uint subseq_len,bool forward){
     std::string nts = "";
+    std::vector<int> coords;
+    uint cp = last_position;
     if(forward){
-        uint cs = std::get<0>(m.new_chain.back());
-        uint ce = std::get<1>(m.new_chain.back());
+//        uint cs = std::get<0>(m.new_chain.back());
+//        uint ce = std::get<1>(m.new_chain.back());
         bool found_last_coding_exon_start = false;
         for(auto& e : exons){
             uint es = std::get<0>(e);
             uint ee = std::get<1>(e);
-            if(cs>=es && ce<=ee){
+            if(cp>=es && cp<=ee){
                 found_last_coding_exon_start = true;
-                ce+=1; // step 1 base past the coding portion of the orf
+                cp+=1; // step 1 base past the coding portion of the orf
             }
 
             if(found_last_coding_exon_start){
-                ce=std::max(ce,es); // will either be the same or ce
-                for(int i=ce;i<=ee;i++){
+                cp=std::max(cp,es); // will either be the same or cp
+                for(int i=cp;i<=ee;i++){
                     if(i-bundle_start>=subseq_len){ // exceeds sequence length
-                        return nts;
+                        return std::make_pair(nts,coords);
                     }
+
+                    coords.push_back(i);
                     nts+=subseq[i-bundle_start];
                     if(nts.size()==3){
                         break;
@@ -243,22 +251,23 @@ std::string next_codon_nt_nonrevcomp(Mods& m,CDS_CHAIN_TYPE& exons,const char* s
         }
     }
     else{
-        uint cs = std::get<0>(m.new_chain[0]);
-        uint ce = std::get<1>(m.new_chain[0]);
+//        uint cs = std::get<0>(m.new_chain[0]);
+//        uint ce = std::get<1>(m.new_chain[0]);
         bool found_last_coding_exon_start = false;
         for(int eidx=exons.size()-1;eidx>=0;eidx--){
             uint es = std::get<0>(exons[eidx]);
             uint ee = std::get<1>(exons[eidx]);
-            if(cs >= es && ce <= ee){
+            if(cp >= es && cp <= ee){
                 found_last_coding_exon_start = true;
-                cs-=1;
+                cp-=1;
             }
             if(found_last_coding_exon_start){
-                cs=std::min(cs, ee);
-                for(uint i=cs; i >= es; i--){
+                cp=std::min(cp, ee);
+                for(uint i=cp; i >= es; i--){
                     if(start_offset+(i-bundle_start)<0){
-                        return nts;
+                        return std::make_pair(nts,coords);
                     }
+                    coords.insert(coords.begin(),i);
                     nts.insert(nts.begin(),subseq[start_offset+(i-bundle_start)]);
                     if(nts.size()==3){
                         break;
@@ -274,67 +283,69 @@ std::string next_codon_nt_nonrevcomp(Mods& m,CDS_CHAIN_TYPE& exons,const char* s
             exit(-1);
         }
     }
-    return nts;
+    return std::make_pair(nts,coords);
 }
 
-std::pair<std::string,char> next_codon(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,char strand,uint start_offset,uint subseq_len){ // extracts the codon that follows the annotated orf - should be STOP ('.')
-    std::string nts = next_codon_nt_nonrevcomp(m,exons,subseq,bundle_start,start_offset,subseq_len,strand=='+');
+std::tuple<std::string,char,std::vector<int>> next_codon(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,char strand,uint start_offset,uint subseq_len){ // extracts the codon that follows the annotated orf - should be STOP ('.')
+    uint last_position = strand=='+' ? std::get<1>(m.new_chain.back()) : std::get<0>(m.new_chain[0]);
+    std::pair<std::string,std::vector<int>> nts_ncs = next_codon_nt_nonrevcomp(last_position,m,exons,subseq,bundle_start,start_offset,subseq_len,strand=='+');
     char* nc;
     int nc_len;
-    if(nts.size()!=3){
+    if(nts_ncs.first.size()!=3){
         if(strand=='+'){
-            return std::make_pair(nts,'-');
+            return std::make_tuple(nts_ncs.first,'-',nts_ncs.second);
         }
         else{
             std::string nts_revcomp = "";
-            for(int i=nts.size()-1;i>=0;i--){
-                nts_revcomp+=ntComplement(nts[i]);
+            for(int i=nts_ncs.first.size()-1;i>=0;i--){
+                nts_revcomp+=ntComplement(nts_ncs.first[i]);
             }
-            return std::make_pair(nts_revcomp,'-');
+            return std::make_tuple(nts_revcomp,'-',nts_ncs.second);
         }
     }
     if(strand=='+'){
-        nc = translateDNA(nts.c_str(), nc_len, nts.size());
-        return std::make_pair(nts,nc[0]);
+        nc = translateDNA(nts_ncs.first.c_str(), nc_len, nts_ncs.first.size());
+        return std::make_tuple(nts_ncs.first,nc[0],nts_ncs.second);
     }
     else{
         std::string nts_revcomp = "";
-        for(int i=nts.size()-1;i>=0;i--){
-            nts_revcomp+=ntComplement(nts[i]);
+        for(int i=nts_ncs.first.size()-1;i>=0;i--){
+            nts_revcomp+=ntComplement(nts_ncs.first[i]);
         }
-        nc = translateDNA(nts_revcomp.c_str(), nc_len, nts.size());
-        return std::make_pair(nts_revcomp,nc[0]);
+        nc = translateDNA(nts_revcomp.c_str(), nc_len, nts_ncs.first.size());
+        return std::make_tuple(nts_revcomp,nc[0],nts_ncs.second);
     }
 }
 
-std::pair<std::string,char> prev_codon(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,char strand,uint start_offset,uint subseq_len){ // extracts the codon that follows the annotated orf - should be STOP ('.')
-    std::string nts = next_codon_nt_nonrevcomp(m,exons,subseq,bundle_start,start_offset,subseq_len,strand=='-');
+std::tuple<std::string,char,std::vector<int>> prev_codon(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,char strand,uint start_offset,uint subseq_len){ // extracts the codon that follows the annotated orf - should be STOP ('.')
+    uint last_position = strand=='-' ? std::get<1>(m.new_chain.back()) : std::get<0>(m.new_chain[0]);
+    std::pair<std::string,std::vector<int>> nts_ncs = next_codon_nt_nonrevcomp(last_position,m,exons,subseq,bundle_start,start_offset,subseq_len,strand=='-');
     char* pc;
     int nc_len;
-    if(nts.size()!=3){
+    if(nts_ncs.first.size()!=3){
         if(strand=='+'){
-            return std::make_pair(nts,'-');
+            return std::make_tuple(nts_ncs.first,'-',nts_ncs.second);
         }
         else{
             std::string nts_revcomp = "";
-            for(int i=nts.size()-1;i>0;i--){
-                nts_revcomp+=ntComplement(nts[i]);
+            for(int i=nts_ncs.first.size()-1;i>0;i--){
+                nts_revcomp+=ntComplement(nts_ncs.first[i]);
             }
-            return std::make_pair(nts_revcomp,'-');
+            return std::make_tuple(nts_revcomp,'-',nts_ncs.second);
         }
     }
 
     if(strand=='+'){
-        pc = translateDNA(nts.c_str(), nc_len, nts.size());
-        return std::make_pair(nts,pc[0]);
+        pc = translateDNA(nts_ncs.first.c_str(), nc_len, nts_ncs.first.size());
+        return std::make_tuple(nts_ncs.first,pc[0],nts_ncs.second);
     }
     else{
         std::string nts_revcomp = "";
-        for(int i=nts.size()-1;i>=0;i--){
-            nts_revcomp+=ntComplement(nts[i]);
+        for(int i=nts_ncs.first.size()-1;i>=0;i--){
+            nts_revcomp+=ntComplement(nts_ncs.first[i]);
         }
-        pc = translateDNA(nts_revcomp.c_str(), nc_len, nts.size());
-        return std::make_pair(nts_revcomp,pc[0]);
+        pc = translateDNA(nts_revcomp.c_str(), nc_len, nts_ncs.first.size());
+        return std::make_tuple(nts_revcomp,pc[0],nts_ncs.second);
     }
 }
 
@@ -431,16 +442,16 @@ bool extend_chain(CDS_CHAIN_TYPE& exons, CDS_CHAIN_TYPE& cds,uint num_bp,bool fo
 
 // searches downstream of the CDS for the next stop codon in the same frame
 void extend_to_stop(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,char strand,uint start_offset,uint subseq_len){
-    std::pair<std::string,char> nt_nc;
+    std::tuple<std::string,char,std::vector<int>> nt_na_nc;
     Mods tmp = m; // temp copy
     bool found_stop = false;
     bool res;
     while(true){
-        nt_nc = next_codon(tmp,exons,subseq,bundle_start,strand,start_offset,subseq_len);
-        if(nt_nc.second=='-'){ // no longer available
+        nt_na_nc = next_codon(tmp,exons,subseq,bundle_start,strand,start_offset,subseq_len);
+        if(std::get<1>(nt_na_nc)=='-'){ // no longer available
             break;
         }
-        else if(nt_nc.second=='.'){
+        else if(std::get<1>(nt_na_nc)=='.'){
             found_stop = true;
             tmp.next_codon = '.';
             break;
@@ -456,8 +467,8 @@ void extend_to_stop(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_
                 std::cerr<<"couldn't extend - something wrong"<<std::endl;
                 exit(1);
             }
-            tmp.cds_aa+=nt_nc.second;
-            tmp.cds_nt+=nt_nc.first;
+            tmp.cds_aa+=std::get<1>(nt_na_nc);
+            tmp.cds_nt+=std::get<0>(nt_na_nc);
         }
     }
     if(found_stop){
@@ -466,39 +477,38 @@ void extend_to_stop(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_
 }
 
 // searches upstream of the CDS for the next start codon in the same frame
-void extend_to_start(Mods& m,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,char strand,uint start_offset,uint subseq_len){
+void extend_to_start(Mods& m,Mods& t,CDS_CHAIN_TYPE& exons,const char* subseq,int bundle_start,char strand,uint start_offset,uint subseq_len){ // m - to be modified; t - original mod
     while(true){ // outer loop allows us to search for the farthest start codon
-        std::pair<std::string,char> nt_nc;
+        std::tuple<std::string,char,std::vector<int>> nt_na_nc; // nt,aa,coords
         Mods tmp = m; // temp copy
         bool found_start = false;
         bool res;
         while(true){ // inner loop searches for the next available start codon and breaks the chain if the stop codon was reached to notify the outer loop
-            nt_nc = prev_codon(tmp,exons,subseq,bundle_start,strand,start_offset,subseq_len);
-            for(auto& n : nt_nc.first){ // even if nt.size()%3!=0 - should still be added to cds_nt unlike to cds_aa
+            nt_na_nc = prev_codon(tmp,exons,subseq,bundle_start,strand,start_offset,subseq_len);
+            for(auto& n : std::get<0>(nt_na_nc)){ // even if nt.size()%3!=0 - should still be added to cds_nt unlike to cds_aa
                 tmp.cds_nt.insert(tmp.cds_nt.begin(),n);
             }
-            if(nt_nc.second=='-'){ // no longer available
+            if(std::get<1>(nt_na_nc)=='-'){ // no longer available
                 break;
             }
-            if(nt_nc.second=='.'){ // stop codon found
+            if(std::get<1>(nt_na_nc)=='.'){ // stop codon found
+                break;
+            }
+            if(std::get<2>(nt_na_nc)==std::get<2>(t.start_codon)){ // reached the same start codon as the template
                 break;
             }
             else{ // valid aa found - store in tmp
-                if(strand=='+'){
-                    res = extend_chain(exons,tmp.new_chain,3,false);
-                }
-                else{
-                    res = extend_chain(exons,tmp.new_chain,3,true);
-                }
+                bool forward = strand=='+' ? false : true;
+                res = extend_chain(exons,tmp.new_chain,3,forward);
                 if(!res){
                     std::cerr<<"couldn't extend - something wrong"<<std::endl;
                     exit(1);
                 }
-                if(nt_nc.second=='M'){
+                if(std::get<1>(nt_na_nc)=='M'){
                     found_start = true;
                     break;
                 }
-                tmp.cds_aa+=nt_nc.second;
+                tmp.cds_aa=std::get<1>(nt_na_nc);
             }
         }
         if(found_start){
@@ -541,78 +551,6 @@ void evaluate_fasta(Mods& m, const char* subseq, int bundle_start, char strand, 
     // TODO: remove duplicate transcripts?
 }
 
-//void trim_to_pos(Mods& m, uint nt_pos,char strand,bool from_stop){ // from stop indicates whether we are trimming the end or the start of the sequence
-//    if(nt_pos%3!=0){
-//        std::cerr<<"trimming AA chain to non-multiple of 3"<<std::endl;
-//        exit(-1);
-//    }
-//    if(!from_stop){ // correct for removing at the start
-//        nt_pos = chain_len(m.new_chain)-nt_pos;
-//    }
-//    uint aa_pos = nt_pos/3;
-//    uint left_to_stop = nt_pos;
-//    bool found_pos = false;
-//    if((strand=='+' && from_stop) ||
-//        strand=='-' && !from_stop){
-//        for(int i=0;i<m.new_chain.size();i++){
-//            uint cs = std::get<0>(m.new_chain[i]);
-//            uint ce = std::get<1>(m.new_chain[i]);
-//            size_t clen = (ce+1)-cs;
-//            if(left_to_stop<clen){ // found the cds segment with the stop codon
-//                std::get<1>(m.new_chain[i]) = (std::get<0>(m.new_chain[i])+left_to_stop)-1;
-//                if(std::get<1>(m.new_chain[i])<std::get<0>(m.new_chain[i])){ // this case happens when the stop codon starts at the start of the 'i' exon
-//                    i--;
-//                }
-//                int chain_len = m.new_chain.size();
-//                if(i<chain_len-1){
-//                    m.new_chain.erase(m.new_chain.begin()+i+1,m.new_chain.end());
-//                }
-//                found_pos=true;
-//                break;
-//            }
-//            left_to_stop-=clen;
-//        }
-//    }
-//    else{ // end
-//        for(int i=m.new_chain.size()-1;i>=0;i--){
-//            uint cs = std::get<0>(m.new_chain[i]);
-//            uint ce = std::get<1>(m.new_chain[i]);
-//            size_t clen = (ce+1)-cs;
-//            if(left_to_stop<clen){ // found the cds segment with the stop codon
-//                std::get<0>(m.new_chain[i]) = (std::get<1>(m.new_chain[i])-left_to_stop)+1;
-//                if(std::get<1>(m.new_chain[i])<std::get<0>(m.new_chain[i])){ // this case happens when the stop codon starts at the start of the 'i' exon
-//                    i++;
-//                }
-//                if(i>0) {
-//                    if(i==0){
-//                        m.new_chain.erase(m.new_chain.begin());
-//                    }
-//                    else if(i==m.new_chain.size()){
-//                        m.new_chain.clear();
-//                    }
-//                    else{
-//                        m.new_chain.erase(m.new_chain.begin(),m.new_chain.begin()+i);
-//                    }
-//                }
-//                found_pos=true;
-//                break;
-//            }
-//            left_to_stop-=clen;
-//        }
-//    }
-//    if(found_pos){
-//        if(from_stop){
-//            m.cds_nt.erase(m.cds_nt.begin()+nt_pos,m.cds_nt.end());
-//            m.cds_aa.erase(m.cds_aa.begin()+aa_pos,m.cds_aa.end());
-//        }
-//        else{
-//            m.cds_nt.erase(m.cds_nt.begin(),m.cds_nt.begin()+nt_pos);
-//            m.cds_aa.erase(m.cds_aa.begin(),m.cds_aa.begin()+aa_pos);
-//        }
-//        m.adjusted = true;
-//    }
-//}
-
 int nt2chain_pos(CDS_CHAIN_TYPE& chain,uint nt_pos,char strand){ // tells which coordinate on the chain corresponds to the coordinate on the nt
     int chain_pos = -1;
     uint left_to_stop = nt_pos;
@@ -654,6 +592,27 @@ int nt2chain_pos(CDS_CHAIN_TYPE& chain,uint nt_pos,char strand){ // tells which 
         exit(-1);
     }
     return chain_pos;
+}
+
+// retrieves nt, aa and coordinates of a codon starting at position 'start_pos' on the m.cds_nt string
+std::tuple<std::string,char,std::vector<int>> get_codon(Mods& m,uint start_pos,char strand){
+    if(start_pos>=m.cds_nt.size()-3){
+        std::cerr<<"requested coordinate is past the boundaries of the recorded sequence"<<std::endl;
+        exit(-1);
+    }
+    std::string nts = "";
+    std::vector<int> coords;
+
+    for(int i=0;i<3;i++){
+        nts+=m.cds_nt[i];
+        int chain_pos = nt2chain_pos(m.new_chain,start_pos+i,strand);
+        coords.push_back(chain_pos);
+    }
+
+    int aalen = 0;
+    std::string aa = translateDNA(nts.c_str(),aalen,nts.size());
+
+    return std::make_tuple(nts,aa[0],coords);
 }
 
 void trim_chain_to_pos(Mods& m, uint start_nt_pos, uint end_nt_pos,char strand){ // from stop indicates whether we are trimming the end or the start of the sequence
@@ -958,7 +917,6 @@ struct TX{
         }
         assign_phase(chain,this->strand,0);
     }
-    // TODO: needs to be stranded - right now phase assignment does not work... can we just ue 'assign phase?
 
     int get_end() const{
         return std::get<1>(this->exons.back());
@@ -980,6 +938,14 @@ struct TX{
     }
 
     int trim_to_null_phase(Mods& m){
+        // TODO: need to trim to null phase with respect to the reference chain - that is the first and last codons of the query must be contained in the reference chain
+
+        // TODO: alternatively - we could analyze all possibilities
+        //       1. find all strictly intersecting intervals (every base of the result belongs to both query and template)
+        //       2. find the longest ones
+        //       2. trim and extend each of them (extend start as far as possible unless the same start is reaches as in template)
+        //       3. report the longest orf
+
         uint new_start_pos = std::get<0>(m.new_chain.front());
         uint new_end_pos = std::get<1>(m.new_chain.back());
         if(this->strand=='+'){
@@ -1002,6 +968,7 @@ struct TX{
     }
 
     // cut strictly - means start and end coordinates must be in the original chain
+    // this is different from cut, where start and end can be in reference intronic regions
     int strict_cut(CDS_CHAIN_TYPE& template_chain,CDS_CHAIN_TYPE& res){
         CDS_CHAIN_TYPE tmp_res;
         uint tmp_len = intersection(this->exons,template_chain,tmp_res);
@@ -1017,6 +984,55 @@ struct TX{
             res = tmp_res;
             return tmp_len;
         }
+    }
+
+    // in this mode only the intersection is computed
+    // the longest set of consecutive intervals in which each base belongs to both template and query is reported
+    // instead of returning everything between matching start/end coordinates
+    int very_strict_cut(CDS_CHAIN_TYPE& template_chain,CDS_CHAIN_TYPE& res){
+        std::vector<CDS_CHAIN_TYPE> tmp_res;
+        bool found_yet = false;
+        int start = 0;
+        std::array<uint,3> inter;
+        int inter_len = 0;
+        bool continue_prev = false;
+        for(auto& i1 : this->exons){
+            found_yet = false;
+            for(int j=start;j<template_chain.size();j++){
+                inter_len = single_intersection(i1,template_chain[j],inter);
+                if(inter_len>0){
+                    tmp_res.back().push_back(inter);
+
+                    // check whether intersection follows the same chain as before - if not a new intersection chain is initiated
+                    bool ends_match = std::get<1>(inter)==std::get<1>(i1)==std::get<1>(template_chain[j]);
+                    bool starts_match = std::get<0>(inter)==std::get<0>(i1)==std::get<0>(template_chain[j]);
+                    if(!continue_prev || !starts_match) { // if previous ends didn't match or current starts don't match - create new intersection chain
+                        tmp_res.push_back(CDS_CHAIN_TYPE{});
+                    }
+                    tmp_res.back().push_back(inter);
+                    continue_prev = ends_match ? true : false;
+
+                    found_yet = true;
+                    if(std::get<1>(inter)==std::get<1>(template_chain[j])){
+                        start++;
+                    }
+                }
+                else{
+                    if(found_yet){ // found the last piece in the intersection for the current i1
+                        break;
+                    }
+                }
+            }
+        }
+
+        // find the longest chain
+        uint max_len = 0;
+        for(auto& t : tmp_res){
+            if(chain_len(t)>max_len){
+                res = t;
+            }
+        }
+        return max_len;
     }
 
     int cut(uint start,uint end,CDS_CHAIN_TYPE& res){ // cuts it's own exon chain - result contains everything between the start/end
@@ -1220,17 +1236,23 @@ struct TX{
     }
 
     Mods fit_new(Mods& orig_cds_mod,const char* bundle_seq, int bundle_start,uint start_offset,uint end_offset,uint bundle_len){ // computes the intersection of own exons and the chain
-//        if(std::strcmp(this->tid.c_str(),"rna-NM_033487.3")==0){
-//            if(std::strcmp(orig_cds_mod.orig_cds_tid.c_str(),"rna-NM_033490.3")==0){
-//                std::cout<<"found"<<std::endl;
-//            }
-//        }
+        if(std::strcmp(this->tid.c_str(),"ALL_00299049")==0){
+            if(std::strcmp(orig_cds_mod.orig_cds_tid.c_str(),"ENST00000295566.8")==0){
+                std::cout<<"found"<<std::endl;
+            }
+        }
 
         this->mods.push_back(Mods());
         this->mods.back().orig_cds_tid = orig_cds_mod.orig_cds_tid;
         this->mods.back().orig_chain = orig_cds_mod.new_chain;
 
-        uint cut_len = strict_cut(orig_cds_mod.new_chain,this->mods.back().new_chain);
+        uint cut_len = 0;
+        if(bundle_seq!=NULL){
+            cut_len = very_strict_cut(orig_cds_mod.new_chain,this->mods.back().new_chain);
+        }
+        else{
+            cut_len = strict_cut(orig_cds_mod.new_chain,this->mods.back().new_chain);
+        }
         if(cut_len<3){ // no overlap found - create a dummy chain which will never overlap anything. This way the Mods will still get populated with data and will make it possible to filter
             this->mods.back().new_chain = CDS_CHAIN_TYPE{std::array<uint,3>{0,0,0}};
         }
@@ -1253,13 +1275,15 @@ struct TX{
                                           std::get<1>(this->mods.back().orig_chain.back())) ||
                         (strand == '+' && std::get<0>(this->mods.back().new_chain.front()) !=
                                           std::get<0>(this->mods.back().orig_chain.front()))) {
-                        extend_to_start(this->mods.back(), this->exons, bundle_seq, bundle_start, strand, start_offset,
+                        extend_to_start(this->mods.back(),orig_cds_mod, this->exons, bundle_seq, bundle_start, strand, start_offset,
                                         bundle_len);
                     }
                     compare_aa(orig_cds_mod, this->mods.back());
                 }
             }
         }
+
+        // should we try to extend it until the query start? and if not - extend as far as you can
 
         if(this->mods.back().new_chain.empty()){ // no matching chain - likely due to stop-codon
             this->mods.back().new_chain = CDS_CHAIN_TYPE{std::array<uint,3>{0,0,0}};
@@ -1540,7 +1564,7 @@ public:
         std::vector<Mods> cds_chains; // outer pair int is the TID of the transcript
         std::set<CDS_CHAIN_TYPE> cur_cds_chains; // for duplicate removal
         std::pair<std::set<CDS_CHAIN_TYPE>::iterator,bool> cit;
-        std::pair<std::string,char> nt_nc;
+        std::tuple<std::string,char,std::vector<int>> nt_na_nc;
         CDS_CHAIN_TYPE cur_cds_chain;
         bool valid = true;
         for(auto& tx : this->txs){
@@ -1561,8 +1585,11 @@ public:
                         int adjusted_end = trim_stop(m,this->strand); // trim stop codon if exists
                         tx.set_cds_end(adjusted_end);
                         CDS_CHAIN_TYPE exons = tx.get_exons();
-                        nt_nc = next_codon(m,exons,bundle_seq,this->start,this->strand,start_offset,bundle_len);
-                        m.next_codon = nt_nc.second;
+                        nt_na_nc = next_codon(m,exons,bundle_seq,this->start,this->strand,start_offset,bundle_len);
+                        m.next_codon = std::get<1>(nt_na_nc);
+
+                        m.start_codon = get_codon(m,0,tx.get_strand());
+
                         valid = check_valid_aa(m);
                     }
                     if(valid){ // only add valid transcripts
@@ -1571,6 +1598,8 @@ public:
                 }
             }
         }
+
+        // TODO: need to make sure sequence-dependent methods are not used without '-r' mode
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
         for(auto& tx : this->txs){

@@ -1001,11 +1001,16 @@ struct TX{
             for(int j=start;j<template_chain.size();j++){
                 inter_len = single_intersection(i1,template_chain[j],inter);
                 if(inter_len>0){
-                    tmp_res.back().push_back(inter);
-
                     // check whether intersection follows the same chain as before - if not a new intersection chain is initiated
-                    bool ends_match = std::get<1>(inter)==std::get<1>(i1)==std::get<1>(template_chain[j]);
-                    bool starts_match = std::get<0>(inter)==std::get<0>(i1)==std::get<0>(template_chain[j]);
+                    uint inter_e = std::get<1>(inter);
+                    uint i1_e = std::get<1>(i1);
+                    uint t_e = std::get<1>(template_chain[j]);
+                    bool ends_match = inter_e==i1_e && i1_e==t_e;
+
+                    uint inter_s = std::get<0>(inter);
+                    uint i1_s = std::get<0>(i1);
+                    uint t_s = std::get<0>(template_chain[j]);
+                    bool starts_match = inter_s==i1_s && i1_s==t_s;
                     if(!continue_prev || !starts_match) { // if previous ends didn't match or current starts don't match - create new intersection chain
                         tmp_res.push_back(CDS_CHAIN_TYPE{});
                     }
@@ -1028,8 +1033,10 @@ struct TX{
         // find the longest chain
         uint max_len = 0;
         for(auto& t : tmp_res){
-            if(chain_len(t)>max_len){
+            uint cur_len = chain_len(t);
+            if(cur_len>max_len){
                 res = t;
+                max_len = cur_len;
             }
         }
         return max_len;
@@ -1236,15 +1243,17 @@ struct TX{
     }
 
     Mods fit_new(Mods& orig_cds_mod,const char* bundle_seq, int bundle_start,uint start_offset,uint end_offset,uint bundle_len){ // computes the intersection of own exons and the chain
-        if(std::strcmp(this->tid.c_str(),"ALL_00299049")==0){
-            if(std::strcmp(orig_cds_mod.orig_cds_tid.c_str(),"ENST00000295566.8")==0){
-                std::cout<<"found"<<std::endl;
-            }
-        }
+//        if(std::strcmp(this->tid.c_str(),"ALL_00299049")==0){
+//            if(std::strcmp(orig_cds_mod.orig_cds_tid.c_str(),"ENST00000295566.8")==0){
+//                std::cout<<"found"<<std::endl;
+//            }
+//        }
 
         this->mods.push_back(Mods());
         this->mods.back().orig_cds_tid = orig_cds_mod.orig_cds_tid;
         this->mods.back().orig_chain = orig_cds_mod.new_chain;
+
+        // TODO: add CDS to the imperfect output
 
         uint cut_len = 0;
         if(bundle_seq!=NULL){
@@ -1270,11 +1279,8 @@ struct TX{
                                    bundle_len);
 
                     // should we do only if the original start codon is not found?
-                    if (!this->mods.back().cds_aa.front() == 'M' ||
-                        (strand == '-' && std::get<1>(this->mods.back().new_chain.back()) !=
-                                          std::get<1>(this->mods.back().orig_chain.back())) ||
-                        (strand == '+' && std::get<0>(this->mods.back().new_chain.front()) !=
-                                          std::get<0>(this->mods.back().orig_chain.front()))) {
+                    this->mods.back().start_codon = get_codon(this->mods.back(),0,this->strand);
+                    if (std::get<2>(this->mods.back().start_codon)!=std::get<2>(orig_cds_mod.start_codon)) {
                         extend_to_start(this->mods.back(),orig_cds_mod, this->exons, bundle_seq, bundle_start, strand, start_offset,
                                         bundle_len);
                     }

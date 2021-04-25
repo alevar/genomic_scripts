@@ -76,7 +76,7 @@ add_executable(orfanage
         src/gff_utils.cpp
         main.cpp)
 
-add_dependencies(orfanage libBigWig)
+#add_dependencies(orfanage libBigWig)
 #target_link_libraries(orfanage ${CMAKE_SOURCE_DIR}/include/libBigWig/libBigWig.a -lbz2 -llzma -pthread -lcrypto -lcurl -lz)
 
 target_link_libraries(orfanage -lbz2 -llzma -pthread -lcrypto -lcurl -lz)

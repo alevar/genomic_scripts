@@ -536,7 +536,7 @@ int nt2chain_pos(CDS_CHAIN_TYPE& chain,int nt_pos,char strand){ // tells which c
             int cs = std::get<0>(chain[i]);
             int ce = std::get<1>(chain[i]);
             size_t clen = (ce+1)-cs;
-            if(left_to_stop<=clen){ // found the cds segment with the stop codon
+            if(left_to_stop<=clen){ // found the segment with the stop codon
                 chain_pos = cs+left_to_stop;
                 found_pos = true;
                 break;
@@ -917,22 +917,24 @@ public:
     int trim_to_null_phase(Mods& m){
         int new_start_pos = std::get<0>(m.new_chain.front());
         int new_end_pos = std::get<1>(m.new_chain.back());
+        int start_phase = 0;
+        int end_phase = 0;
         if(this->strand=='+'){
-            int start_phase = get_phase(std::get<0>(m.new_chain.front()),this->strand,m.orig_chain);
+            start_phase = get_phase(std::get<0>(m.new_chain.front()),this->strand,m.orig_chain);
             int x = get_phase(std::get<1>(m.new_chain.back()),this->strand,m.orig_chain);
-            int end_phase = (3-(x-1)%3)%3;
-
-            new_start_pos+=start_phase;
-            new_end_pos-=end_phase;
+            end_phase = (3-(x-1)%3)%3;
         }
         else{
-            int start_phase = get_phase(std::get<1>(m.new_chain.back()),this->strand,m.orig_chain);
+            start_phase = get_phase(std::get<1>(m.new_chain.back()),this->strand,m.orig_chain);
             int x = get_phase(std::get<0>(m.new_chain.front()),this->strand,m.orig_chain);
-            int end_phase = (3-(x-1)%3)%3;
-
-            new_start_pos+=end_phase;
-            new_end_pos-=start_phase;
+            end_phase = (3-(x-1)%3)%3;
         }
+        int tmp_new_start_pos = nt2chain_pos(m.new_chain,start_phase,this->strand);
+        int tmp_new_end_pos = nt2chain_pos(m.new_chain,chain_len(m.new_chain)-end_phase,this->strand);
+
+        new_start_pos = strand=='+' ? tmp_new_start_pos : tmp_new_end_pos;
+        new_end_pos = strand=='+' ? tmp_new_end_pos-1 : tmp_new_start_pos-1;
+
         m.new_chain.clear();
         int cut_len = cut(new_start_pos,new_end_pos,m.new_chain); // cut again to the adjusted coordinates
         return cut_len;
@@ -1220,8 +1222,8 @@ public:
     }
 
     Mods fit_new(Mods& orig_cds_mod,const char* bundle_seq, int bundle_start,int start_offset,int end_offset,int bundle_len){ // computes the intersection of own exons and the chain
-//        if(std::strcmp(this->tid.c_str(),"rna-NM_130762.3")==0){
-//            if(std::strcmp(orig_cds_mod.orig_cds_tid.c_str(),"rna-NM_130760.3")==0){
+//        if(std::strcmp(this->tid.c_str(),"ALL_00000893")==0){
+//            if(std::strcmp(orig_cds_mod.orig_cds_tid.c_str(),"ENST00000622660.1")==0){
 //                std::cout<<"found"<<std::endl;
 //            }
 //        }
@@ -1542,7 +1544,7 @@ public:
         CDS_CHAIN_TYPE cur_cds_chain;
         bool valid = true;
         for(auto& tx : this->txs){
-//            if(std::strcmp(tx.get_tid().c_str(),"rna-XM_005244749.3")==0){
+//            if(std::strcmp(tx.get_tid().c_str(),"rna-XM_005248338.3")==0){
 //                std::cout<<"found"<<std::endl;
 //            }
             if(tx.has_cds()){
@@ -1579,7 +1581,7 @@ public:
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
         for(auto& tx : this->txs){
-//            if(std::strcmp(tx.get_tid().c_str(),"rna-XM_005244749.3")==0){
+//            if(std::strcmp(tx.get_tid().c_str(),"rna-XM_005248338.3")==0){
 //                std::cout<<"found"<<std::endl;
 //            }
             std::string cur_tid = tx.get_tid();

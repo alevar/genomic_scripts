@@ -1357,7 +1357,7 @@ public:
                      +"transcript_id \""+tid+"\"; "
                      +this->get_attributes()+"\n";
         }
-        if(!m.new_chain.empty()){
+        if(!m.new_chain.empty() && chain_len(m.new_chain)>=3){
             for(auto& c : m.new_chain){
                 gtf_str+=this->seqid+"\t"
                          +this->source+"\t"
@@ -1581,7 +1581,7 @@ public:
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
         for(auto& tx : this->txs){
-//            if(std::strcmp(tx.get_tid().c_str(),"rna-XM_005248338.3")==0){
+//            if(std::strcmp(tx.get_tid().c_str(),"ALL_02261569")==0){
 //                std::cout<<"found"<<std::endl;
 //            }
             std::string cur_tid = tx.get_tid();

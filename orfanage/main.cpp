@@ -24,6 +24,8 @@ struct Globals{
     std::ofstream out_gtf_perfect_fp;
     std::ofstream out_gtf_imperfect_fp;
     std::ofstream out_gtf_nonoverlap_fp;
+
+    bool nocdslencheck = false;
 } globals;
 
 std::map<std::string,char> codon_map = {{"AAA",'K'},{"AAC",'N'},{"AAG",'K'},{"AAR",'K'},{"AAT",'N'},{"AAY",'N'},{"ACA",'T'},{"ACB",'T'},{"ACC",'T'},{"ACD",'T'},{"ACG",'T'},{"ACH",'T'},{"ACK",'T'},{"ACM",'T'},{"ACN",'T'},{"ACR",'T'},{"ACS",'T'},{"ACT",'T'},{"ACV",'T'},{"ACW",'T'},{"ACY",'T'},{"AGA",'R'},{"AGC",'S'},{"AGG",'R'},{"AGR",'R'},{"AGT",'S'},{"AGY",'S'},{"ATA",'I'},{"ATC",'I'},{"ATG",'M'},{"ATH",'I'},{"ATM",'I'},{"ATT",'I'},{"ATW",'I'},{"ATY",'I'},{"CAA",'Q'},{"CAC",'H'},{"CAG",'Q'},{"CAR",'Q'},{"CAT",'H'},{"CAY",'H'},{"CCA",'P'},{"CCB",'P'},{"CCC",'P'},{"CCD",'P'},{"CCG",'P'},{"CCH",'P'},{"CCK",'P'},{"CCM",'P'},{"CCN",'P'},{"CCR",'P'},{"CCS",'P'},{"CCT",'P'},{"CCV",'P'},{"CCW",'P'},{"CCY",'P'},{"CGA",'R'},{"CGB",'R'},{"CGC",'R'},{"CGD",'R'},{"CGG",'R'},{"CGH",'R'},{"CGK",'R'},{"CGM",'R'},{"CGN",'R'},{"CGR",'R'},{"CGS",'R'},{"CGT",'R'},{"CGV",'R'},{"CGW",'R'},{"CGY",'R'},{"CTA",'L'},{"CTB",'L'},{"CTC",'L'},{"CTD",'L'},{"CTG",'L'},{"CTH",'L'},{"CTK",'L'},{"CTM",'L'},{"CTN",'L'},{"CTR",'L'},{"CTS",'L'},{"CTT",'L'},{"CTV",'L'},{"CTW",'L'},{"CTY",'L'},{"GAA",'E'},{"GAC",'D'},{"GAG",'E'},{"GAR",'E'},{"GAT",'D'},{"GAY",'D'},{"GCA",'A'},{"GCB",'A'},{"GCC",'A'},{"GCD",'A'},{"GCG",'A'},{"GCH",'A'},{"GCK",'A'},{"GCM",'A'},{"GCN",'A'},{"GCR",'A'},{"GCS",'A'},{"GCT",'A'},{"GCV",'A'},{"GCW",'A'},{"GCY",'A'},{"GGA",'G'},{"GGB",'G'},{"GGC",'G'},{"GGD",'G'},{"GGG",'G'},{"GGH",'G'},{"GGK",'G'},{"GGM",'G'},{"GGN",'G'},{"GGR",'G'},{"GGS",'G'},{"GGT",'G'},{"GGV",'G'},{"GGW",'G'},{"GGY",'G'},{"GTA",'V'},{"GTB",'V'},{"GTC",'V'},{"GTD",'V'},{"GTG",'V'},{"GTH",'V'},{"GTK",'V'},{"GTM",'V'},{"GTN",'V'},{"GTR",'V'},{"GTS",'V'},{"GTT",'V'},{"GTV",'V'},{"GTW",'V'},{"GTY",'V'},{"MGA",'R'},{"MGG",'R'},{"MGR",'R'},{"NNN",'X'},{"RAY",'B'},{"SAR",'Z'},{"TAA",'.'},{"TAC",'Y'},{"TAG",'.'},{"TAR",'.'},{"TAT",'Y'},{"TAY",'Y'},{"TCA",'S'},{"TCB",'S'},{"TCC",'S'},{"TCD",'S'},{"TCG",'S'},{"TCH",'S'},{"TCK",'S'},{"TCM",'S'},{"TCN",'S'},{"TCR",'S'},{"TCS",'S'},{"TCT",'S'},{"TCV",'S'},{"TCW",'S'},{"TCY",'S'},{"TGA",'.'},{"TGC",'C'},{"TGG",'W'},{"TGT",'C'},{"TGY",'C'},{"TRA",'.'},{"TTA",'L'},{"TTC",'F'},{"TTG",'L'},{"TTR",'L'},{"TTT",'F'},{"TTY",'F'},{"XXX",'X'},{"YTA",'L'},{"YTG",'L'},{"YTR",'L'}};
@@ -1533,7 +1535,7 @@ public:
             if(tx.has_cds()){
                 cur_cds_chain.clear();
                 tx.build_cds_chain(cur_cds_chain);
-                if(chain_len(cur_cds_chain)%3!=0){
+                if(!globals.nocdslencheck && chain_len(cur_cds_chain)%3!=0){
                     std::cout<<"discarding transcript: "<<tx.get_tid()<<" - len(CDS)%3!=0"<<std::endl;
                     continue;
                 }
@@ -1779,7 +1781,8 @@ enum Opt {CDS       = 'c',
     OUTPUT    = 'o',
     REFERENCE = 'r',
     CLEANREF  = 'c',
-    FILTER    = 'f'};
+    FILTER    = 'f',
+    NOCDSLEN  = 'n'};
 
 int main(int argc, char** argv) {
 
@@ -1790,6 +1793,7 @@ int main(int argc, char** argv) {
     args.add_string(Opt::REFERENCE,"reference","","Reference fasta",false);
     args.add_flag(Opt::CLEANREF,"cleanref","Remove transcripts which contain mistakes in pre-annotated CDS",false);
     args.add_flag(Opt::FILTER,"filter","Select the best fitting CDS where possible",false);
+    args.add_flag(Opt::NOCDSLEN,"nocdslencheck","remove the check for len(CDS)%3==0 in the known transcripts",false);
 
     if(argc <= 1 || strcmp(argv[1], "--help") == 0){
         std::cerr << args.get_help() << std::endl;
@@ -1859,6 +1863,8 @@ int main(int argc, char** argv) {
             std::cerr<<"FASTA index rebuilt."<<std::endl;
         }
     }
+
+    globals.nocdslencheck = args.get_flag(Opt::NOCDSLEN);
 
     // run
     std::string ref_fname = args.is_set(Opt::REFERENCE) ? args.get_string(Opt::REFERENCE) : "";

@@ -26,6 +26,7 @@ struct Globals{
     std::ofstream out_gtf_nonoverlap_fp;
 
     bool nocdslencheck = false;
+    bool annotateknown = false;
 } globals;
 
 std::map<std::string,char> codon_map = {{"AAA",'K'},{"AAC",'N'},{"AAG",'K'},{"AAR",'K'},{"AAT",'N'},{"AAY",'N'},{"ACA",'T'},{"ACB",'T'},{"ACC",'T'},{"ACD",'T'},{"ACG",'T'},{"ACH",'T'},{"ACK",'T'},{"ACM",'T'},{"ACN",'T'},{"ACR",'T'},{"ACS",'T'},{"ACT",'T'},{"ACV",'T'},{"ACW",'T'},{"ACY",'T'},{"AGA",'R'},{"AGC",'S'},{"AGG",'R'},{"AGR",'R'},{"AGT",'S'},{"AGY",'S'},{"ATA",'I'},{"ATC",'I'},{"ATG",'M'},{"ATH",'I'},{"ATM",'I'},{"ATT",'I'},{"ATW",'I'},{"ATY",'I'},{"CAA",'Q'},{"CAC",'H'},{"CAG",'Q'},{"CAR",'Q'},{"CAT",'H'},{"CAY",'H'},{"CCA",'P'},{"CCB",'P'},{"CCC",'P'},{"CCD",'P'},{"CCG",'P'},{"CCH",'P'},{"CCK",'P'},{"CCM",'P'},{"CCN",'P'},{"CCR",'P'},{"CCS",'P'},{"CCT",'P'},{"CCV",'P'},{"CCW",'P'},{"CCY",'P'},{"CGA",'R'},{"CGB",'R'},{"CGC",'R'},{"CGD",'R'},{"CGG",'R'},{"CGH",'R'},{"CGK",'R'},{"CGM",'R'},{"CGN",'R'},{"CGR",'R'},{"CGS",'R'},{"CGT",'R'},{"CGV",'R'},{"CGW",'R'},{"CGY",'R'},{"CTA",'L'},{"CTB",'L'},{"CTC",'L'},{"CTD",'L'},{"CTG",'L'},{"CTH",'L'},{"CTK",'L'},{"CTM",'L'},{"CTN",'L'},{"CTR",'L'},{"CTS",'L'},{"CTT",'L'},{"CTV",'L'},{"CTW",'L'},{"CTY",'L'},{"GAA",'E'},{"GAC",'D'},{"GAG",'E'},{"GAR",'E'},{"GAT",'D'},{"GAY",'D'},{"GCA",'A'},{"GCB",'A'},{"GCC",'A'},{"GCD",'A'},{"GCG",'A'},{"GCH",'A'},{"GCK",'A'},{"GCM",'A'},{"GCN",'A'},{"GCR",'A'},{"GCS",'A'},{"GCT",'A'},{"GCV",'A'},{"GCW",'A'},{"GCY",'A'},{"GGA",'G'},{"GGB",'G'},{"GGC",'G'},{"GGD",'G'},{"GGG",'G'},{"GGH",'G'},{"GGK",'G'},{"GGM",'G'},{"GGN",'G'},{"GGR",'G'},{"GGS",'G'},{"GGT",'G'},{"GGV",'G'},{"GGW",'G'},{"GGY",'G'},{"GTA",'V'},{"GTB",'V'},{"GTC",'V'},{"GTD",'V'},{"GTG",'V'},{"GTH",'V'},{"GTK",'V'},{"GTM",'V'},{"GTN",'V'},{"GTR",'V'},{"GTS",'V'},{"GTT",'V'},{"GTV",'V'},{"GTW",'V'},{"GTY",'V'},{"MGA",'R'},{"MGG",'R'},{"MGR",'R'},{"NNN",'X'},{"RAY",'B'},{"SAR",'Z'},{"TAA",'.'},{"TAC",'Y'},{"TAG",'.'},{"TAR",'.'},{"TAT",'Y'},{"TAY",'Y'},{"TCA",'S'},{"TCB",'S'},{"TCC",'S'},{"TCD",'S'},{"TCG",'S'},{"TCH",'S'},{"TCK",'S'},{"TCM",'S'},{"TCN",'S'},{"TCR",'S'},{"TCS",'S'},{"TCT",'S'},{"TCV",'S'},{"TCW",'S'},{"TCY",'S'},{"TGA",'.'},{"TGC",'C'},{"TGG",'W'},{"TGT",'C'},{"TGY",'C'},{"TRA",'.'},{"TTA",'L'},{"TTC",'F'},{"TTG",'L'},{"TTR",'L'},{"TTT",'F'},{"TTY",'F'},{"XXX",'X'},{"YTA",'L'},{"YTG",'L'},{"YTR",'L'}};
@@ -731,7 +732,7 @@ int get_phase(int pos,char strand,CDS_CHAIN_TYPE& phased_chain){ // returns the 
 class TX{
 public:
     TX() = default;
-    TX(GffObj* tx,int idx){
+    TX(GffObj* tx,int idx,bool is_templ){
         if(tx->hasCDS()){
             cds_start = (int)tx->CDstart;
             cds_end = (int)tx->CDend;
@@ -757,6 +758,7 @@ public:
             }
         }
 
+        this->is_templ=is_templ;
         this->id = idx;
         this->tid = tx->getID();
         this->seqid = tx->getGSeqName();
@@ -1245,7 +1247,9 @@ public:
             this->mods.back().new_chain = CDS_CHAIN_TYPE{std::array<int,3>{0,0,0}};
         }
         else{
-            cut_len = trim_to_null_phase(this->mods.back());
+            if(!globals.nocdslencheck){
+                cut_len = trim_to_null_phase(this->mods.back());
+            }
             if(cut_len<3){ // no overlap found - create a dummy chain which will never overlap anything. This way the Mods will still get populated with data and will make it possible to filter
                 this->mods.back().new_chain = CDS_CHAIN_TYPE{std::array<int,3>{0,0,0}};
             }
@@ -1396,7 +1400,12 @@ public:
         return gtf_str;
     } // TODO: output fasta of nt and aa for each perfect and imperfect transcript to check against gffread and validate the results
 
+    bool is_template(){
+        return this->is_templ;
+    }
+
 private:
+    bool is_templ = false;
     int id = -1;
     std::string tid;
     std::string seqid;
@@ -1532,7 +1541,7 @@ public:
 //            if(std::strcmp(tx.get_tid().c_str(),"rna-XM_005248338.3")==0){
 //                std::cout<<"found"<<std::endl;
 //            }
-            if(tx.has_cds()){
+            if(tx.has_cds() && tx.is_template()){
                 cur_cds_chain.clear();
                 tx.build_cds_chain(cur_cds_chain);
                 if(!globals.nocdslencheck && chain_len(cur_cds_chain)%3!=0){
@@ -1569,6 +1578,9 @@ public:
 //            if(std::strcmp(tx.get_tid().c_str(),"ALL_00000660")==0){
 //                std::cout<<"found"<<std::endl;
 //            }
+            if(!globals.annotateknown && tx.is_template()){
+                continue;
+            }
             std::string cur_tid = tx.get_tid();
             if(cds_chains.empty()){
                 globals.out_gtf_fp<<tx.get_gtf(cur_tid,const_cast<Mods &>(empty_mod))<<std::endl;
@@ -1647,7 +1659,7 @@ private:
 // and then sorts them using custom rules
 struct Transcriptome{
 public:
-    Transcriptome(const std::string& gtf_fname){
+    Transcriptome(const std::string& gtf_fname,bool is_templ){
         FILE* gff_file = fopen(gtf_fname.c_str(), "r");
         if (gff_file == nullptr)
         {
@@ -1660,13 +1672,13 @@ public:
 
         for(int i=0;i<gffReader.gflst.Count();++i) {
             GffObj *pGffObj = gffReader.gflst.Get(i);
-            TX tmp(pGffObj,tx_vec.size());
+            TX tmp(pGffObj,tx_vec.size(),is_templ);
             tx_vec.push_back(tmp);
         }
     }
     ~Transcriptome()=default;
 
-    void add(const std::string& gtf_fname){
+    void add(const std::string& gtf_fname,bool is_templ){
         FILE* gff_file = fopen(gtf_fname.c_str(), "r");
         if (gff_file == nullptr)
         {
@@ -1678,7 +1690,7 @@ public:
 
         for(int i=0;i<gffReader.gflst.Count();++i) {
             GffObj *pGffObj = gffReader.gflst.Get(i);
-            TX tmp(pGffObj,tx_vec.size());
+            TX tmp(pGffObj,tx_vec.size(),is_templ);
             tx_vec.push_back(tmp);
         }
     }
@@ -1710,9 +1722,9 @@ int run(std::vector<std::string> known_gtf_fnames, std::string novel_gtf_fname,s
     // form bundles (all overlapping
 
     // load the reference GFF
-    Transcriptome transcriptome(novel_gtf_fname); // TODO: if transcript has a cds - just report it unless better CDS available
+    Transcriptome transcriptome(novel_gtf_fname,false); // TODO: if transcript has a cds - just report it unless better CDS available
     for(auto& k : known_gtf_fnames){
-        transcriptome.add(k);
+        transcriptome.add(k,true);
     }
     transcriptome.sort();
 
@@ -1782,7 +1794,8 @@ enum Opt {CDS       = 'c',
     REFERENCE = 'r',
     CLEANREF  = 'c',
     FILTER    = 'f',
-    NOCDSLEN  = 'n'};
+    NOCDSLEN  = 'n',
+    ANNOTATEKNOWN = 'k'};
 
 int main(int argc, char** argv) {
 
@@ -1794,6 +1807,7 @@ int main(int argc, char** argv) {
     args.add_flag(Opt::CLEANREF,"cleanref","Remove transcripts which contain mistakes in pre-annotated CDS",false);
     args.add_flag(Opt::FILTER,"filter","Select the best fitting CDS where possible",false);
     args.add_flag(Opt::NOCDSLEN,"nocdslencheck","remove the check for len(CDS)%3==0 in the known transcripts",false);
+    args.add_flag(Opt::ANNOTATEKNOWN,"annotateknown","if enabled, orfanage will try to find the best ORF for known transcripts as well.",false);
 
     if(argc <= 1 || strcmp(argv[1], "--help") == 0){
         std::cerr << args.get_help() << std::endl;
@@ -1864,7 +1878,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    globals.nocdslencheck = args.get_flag(Opt::NOCDSLEN);
+    globals.nocdslencheck = args.get_flag(Opt::NOCDSLEN); // TODO: make sure this is never enabled with '-r'
+    globals.annotateknown = args.get_flag(Opt::ANNOTATEKNOWN);
 
     // run
     std::string ref_fname = args.is_set(Opt::REFERENCE) ? args.get_string(Opt::REFERENCE) : "";

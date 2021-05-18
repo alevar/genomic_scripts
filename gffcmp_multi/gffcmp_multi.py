@@ -193,14 +193,14 @@ def gffcmp_multi(args):
     plt.clf()
     plot(mat_exons)
     plt.suptitle('Exon Set Comparison Between Sources')
-    plt.savefig(args.output + ".exons.png")
+    plt.savefig(args.output + ".exons.eps")
 
     # compute intron overlaps and plot upset
     plt.close('all')
     plt.clf()
     plot(mat_introns)
     plt.suptitle('Intron Set Comparison Between Sources')
-    plt.savefig(args.output + ".introns.png")
+    plt.savefig(args.output + ".introns.eps")
 
     # compute CDS overlaps and plot upset
     introns = dict()
@@ -221,14 +221,14 @@ def gffcmp_multi(args):
     plt.clf()
     plot(mat_exons)
     plt.suptitle('CDS Segment Set Comparison Between Sources')
-    plt.savefig(args.output + ".cds.png")
+    plt.savefig(args.output + ".cds.eps")
 
     # compute CDS intron overlaps and plot upset
     plt.close('all')
     plt.clf()
     plot(mat_introns)
     plt.suptitle('CDS Intron Set Comparison Between Sources')
-    plt.savefig(args.output + ".cds_introns.png")
+    plt.savefig(args.output + ".cds_introns.eps")
 
     # cycle through annotations and load all transcripts in
     tx_map = dict()
@@ -278,7 +278,7 @@ def gffcmp_multi(args):
     plt.clf()
     plot(mat)
     plt.suptitle('Transcript Set Comparison Between Sources')
-    plt.savefig(args.output + ".png")
+    plt.savefig(args.output + ".eps")
 
     # do the same for exons and introns
 

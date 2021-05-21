@@ -1575,9 +1575,6 @@ public:
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
         for(auto& tx : this->txs){
-//            if(std::strcmp(tx.get_tid().c_str(),"ALL_00000660")==0){
-//                std::cout<<"found"<<std::endl;
-//            }
             if(!globals.annotateknown && tx.is_template()){
                 continue;
             }
@@ -1805,7 +1802,6 @@ int main(int argc, char** argv) {
     args.add_string(Opt::OUTPUT, "output", "", "Output name", true);
     args.add_string(Opt::REFERENCE,"reference","","Reference fasta",false);
     args.add_flag(Opt::CLEANREF,"cleanref","Remove transcripts which contain mistakes in pre-annotated CDS",false);
-    args.add_flag(Opt::FILTER,"filter","Select the best fitting CDS where possible",false);
     args.add_flag(Opt::NOCDSLEN,"nocdslencheck","remove the check for len(CDS)%3==0 in the known transcripts",false);
     args.add_flag(Opt::ANNOTATEKNOWN,"annotateknown","if enabled, orfanage will try to find the best ORF for known transcripts as well.",false);
 

@@ -34,10 +34,12 @@ def get_combs(names):
     return res
 
 
-def get_mat(names):
+def get_mat(names,keep_all_false=True):
     tmp = list(itertools.product([False, True], repeat=len(names)))
     index = pd.MultiIndex.from_tuples(tmp, names=names)
     series = pd.Series(np.zeros(len(tmp)), index=index)
+    if not keep_all_false:
+        series = series[~(series==False)] # remove the first row with all Falses
     return series
 
 
@@ -148,14 +150,6 @@ def gffcmp_multi(args):
         gtf_list.append(tuple([label,output_dir+label+".gtf"]))
         labels.append(label)
 
-    input_label = args.input
-    input_fname = None
-    for x in gtf_list:
-        if x[0] == input_label:
-            input_fname = x[1]
-            break
-    assert input_fname is not None, "requested input label not found in the setup file"
-
     gtf_pairs = list(itertools.permutations(gtf_list, 2))
     for gp in gtf_pairs:
         gffcmp_cmd = [args.gffcompare, "--no-merge",
@@ -180,8 +174,8 @@ def gffcmp_multi(args):
     for label,path in gtf_list:
         introns[label],exons[label] = get_introns_exons(path)
     combs = get_combs(labels)
-    mat_introns = get_mat(labels)
-    mat_exons = get_mat(labels)
+    mat_introns = get_mat(labels,False)
+    mat_exons = get_mat(labels,False)
     index_names = mat_introns.index.names
     for comb,comb_rev in combs:
         res_introns = get_set_def(introns,comb,comb_rev)
@@ -191,44 +185,18 @@ def gffcmp_multi(args):
         mat_exons.loc[idx_loc] = len(res_exons)
     plt.close('all')
     plt.clf()
-    plot(mat_exons)
+    plot(mat_exons,show_percentages=True,show_counts=True,sort_by="cardinality")
     plt.suptitle('Exon Set Comparison Between Sources')
     plt.savefig(args.output + ".exons.eps")
+    mat_exons.to_csv(args.output+".exons.csv")
 
     # compute intron overlaps and plot upset
     plt.close('all')
     plt.clf()
-    plot(mat_introns)
+    plot(mat_introns,show_percentages=True,show_counts=True,sort_by="cardinality")
     plt.suptitle('Intron Set Comparison Between Sources')
     plt.savefig(args.output + ".introns.eps")
-
-    # compute CDS overlaps and plot upset
-    introns = dict()
-    exons = dict()
-    for label,path in gtf_list:
-        introns[label],exons[label] = get_introns_exons(path,True)
-    combs = get_combs(labels)
-    mat_introns = get_mat(labels)
-    mat_exons = get_mat(labels)
-    index_names = mat_introns.index.names
-    for comb,comb_rev in combs:
-        res_introns = get_set_def(introns,comb,comb_rev)
-        res_exons = get_set_def(exons,comb,comb_rev)
-        idx_loc = tuple([True if x in comb else False for x in index_names])
-        mat_introns.loc[idx_loc] = len(res_introns)
-        mat_exons.loc[idx_loc] = len(res_exons)
-    plt.close('all')
-    plt.clf()
-    plot(mat_exons)
-    plt.suptitle('CDS Segment Set Comparison Between Sources')
-    plt.savefig(args.output + ".cds.eps")
-
-    # compute CDS intron overlaps and plot upset
-    plt.close('all')
-    plt.clf()
-    plot(mat_introns)
-    plt.suptitle('CDS Intron Set Comparison Between Sources')
-    plt.savefig(args.output + ".cds_introns.eps")
+    mat_introns.to_csv(args.output+".introns.csv")
 
     # cycle through annotations and load all transcripts in
     tx_map = dict()
@@ -266,7 +234,7 @@ def gffcmp_multi(args):
                 tx_map[rn][tn][rtid] = ttids
 
     combs = get_combs(list(tx_map))
-    mat = get_mat(list(tx_map))
+    mat = get_mat(list(tx_map),False)
     index_names = mat.index.names
 
     for comb, comb_rev in combs:
@@ -276,67 +244,79 @@ def gffcmp_multi(args):
 
     plt.close('all')
     plt.clf()
-    plot(mat)
+    plot(mat,show_percentages=True,show_counts=True,sort_by="cardinality")
     plt.suptitle('Transcript Set Comparison Between Sources')
-    plt.savefig(args.output + ".eps")
+    plt.savefig(args.output + ".tx.eps")
+    mat.to_csv(args.output+".tx.csv")
 
-    # do the same for exons and introns
+    
 
-    ref_labels = list(set(tx_map) - {input_label})
-    ref_labels = sorted(ref_labels)
-    out_gtf_fp = open(args.output + ".gtf", "w+")
-    out_map_fp = open(args.output + ".map.tsv", "w+")
-    map_line = "\t".join([input_label] + ref_labels) + "\n"
-    out_map_fp.write(map_line)
-    with open(input_fname, "r") as inFP:
-        for line in inFP:
-            line = line.rstrip()
-            if line[0] == "#":
-                out_gtf_fp.write(line + "\n")
-            else:
-                cols = line.split("\t")
-                if cols[2] == "transcript":
-                    attrs = cols[8]
-                    assert attrs[-1] == ";", "invalid format"
-                    tmp = attrs.split("transcript_id \"", 1)
-                    assert len(tmp) > 1, "invalid format?"
-                    tid = tmp[-1].split("\"", 1)[0]
-                    map_line = tid + "\t"
-                    for rl in ref_labels:
-                        rtid = tx_map[input_label][rl][tid]
-                        if rtid is not None:
-                            rtid = ",".join(rtid)
-                            map_line += rtid + "\t"
-                        else:
-                            map_line += "-\t"
-                        attrs += " " + rl + " \"" + str(rtid) + "\";"
-                    out_map_fp.write(map_line.rstrip("\t") + "\n")
-                    cols[8] = attrs
-                    out_gtf_fp.write("\t".join(cols) + "\n")
-                else:
+    if args.input is not None: # annotate
+        input_label = args.input
+        input_fname = None
+        for x in gtf_list:
+            if x[0] == input_label:
+                input_fname = x[1]
+                break
+        assert input_fname is not None, "requested input label not found in the setup file"
+
+        ref_labels = list(set(tx_map) - {input_label})
+        ref_labels = sorted(ref_labels)
+        out_gtf_fp = open(args.output + ".gtf", "w+")
+        out_map_fp = open(args.output + ".map.tsv", "w+")
+        map_line = "\t".join([input_label] + ref_labels) + "\n"
+        out_map_fp.write(map_line)
+        with open(input_fname, "r") as inFP:
+            for line in inFP:
+                line = line.rstrip()
+                if line[0] == "#":
                     out_gtf_fp.write(line + "\n")
+                else:
+                    cols = line.split("\t")
+                    if cols[2] == "transcript":
+                        attrs = cols[8]
+                        assert attrs[-1] == ";", "invalid format"
+                        tmp = attrs.split("transcript_id \"", 1)
+                        assert len(tmp) > 1, "invalid format?"
+                        tid = tmp[-1].split("\"", 1)[0]
+                        map_line = tid + "\t"
+                        for rl in ref_labels:
+                            rtid = tx_map[input_label][rl][tid]
+                            if rtid is not None:
+                                rtid = ",".join(rtid)
+                                map_line += rtid + "\t"
+                            else:
+                                map_line += "-\t"
+                            attrs += " " + rl + " \"" + str(rtid) + "\";"
+                        out_map_fp.write(map_line.rstrip("\t") + "\n")
+                        cols[8] = attrs
+                        out_gtf_fp.write("\t".join(cols) + "\n")
+                    else:
+                        out_gtf_fp.write(line + "\n")
 
-    out_gtf_fp.close()
-    out_map_fp.close()
+        out_gtf_fp.close()
+        out_map_fp.close()
 
     # cleanup
-    for gp in gtf_pairs:
-        os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".tmap")
-        os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".refmap")
-        os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".annotated.gtf")
-        os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".stats")
-        os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".tracking")
-        os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".loci")
 
     for label,path in gtf_list: # cleanup gffread conversions
         os.remove(path)
+
+    if not args.keep_tmp:
+        for gp in gtf_pairs:
+            os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".tmap")
+            os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".refmap")
+            os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".annotated.gtf")
+            os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".stats")
+            os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".tracking")
+            os.remove(args.output + gp[0][0] + "_" + gp[1][0] + ".loci")
 
 
 def main(args):
     parser = argparse.ArgumentParser(description='''Help Page''')
     parser.add_argument("-i",
                         "--input",
-                        required=True,
+                        required=False,
                         help="Name of the file to be annotated as provided in the first column of the '-s/--setup' "
                              "argument.")
     parser.add_argument("-s",
@@ -359,6 +339,9 @@ def main(args):
                         type=str,
                         default="gffread",
                         help="path to the gffread executable")
+    parser.add_argument("--keep-tmp",
+                        action="store_true",
+                        help="keep all final temporary outputs (individual gffcompare results)")
     parser.set_defaults(func=gffcmp_multi)
     args = parser.parse_args()
     args.func(args)

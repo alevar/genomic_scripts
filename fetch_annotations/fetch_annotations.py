@@ -7,6 +7,8 @@
 
 # this script simply pools the latest human annotation sources - unzips and standardizes them into GTF-formatted UCSC nomenclature files
 
+import urllib.request as request
+from contextlib import closing
 import pandas as pd
 import subprocess
 import argparse
@@ -29,15 +31,35 @@ def get_nomenclature(ann_fname,chr_map,out_fname):
             seqid = line.split("\t",1)[0]
             seqids.add(seqid)
 
+    wrong_seqids = set()
     sub_map = dict()
     for seqid in seqids:
-        tmp = set(chr_map[(chr_map==seqid).any(axis=1)]["ucsc"])
-        assert len(tmp)==1,"multiple choices for: "+seqid
-        sub_map[seqid]=list(tmp)[0]
+        found_unique = False
+        for col in list(chr_map.columns):
+            tmp = set(chr_map[chr_map[col]==seqid]["ucsc"])
+            if len(tmp)==1:
+                sub_map[seqid]=list(tmp)[0]
+                found_unique=True
+                break
+        if not found_unique:
+            print("multiple choices for sequence: "+seqid+" in source: "+ann_fname)
+            wrong_seqids.add(seqid)
 
     with open(out_fname,"w+") as outFP:
         for k,v in sub_map.items():
             outFP.write(k+" "+v+"\n")
+
+    return seqid
+
+def remove_gtf_seqids(fname,seqids): # removes records with the specified IDs from the GTF/GFF file inplace
+    with open(fname+"tmp","w+") as outFP:
+        with open(fname,"r") as inFP:
+            for line in inFP.readlines():
+                seqid = line.split("\t")[0]
+                if seqid in seqids:
+                    continue
+                outFP.write(line)
+    shutil.move(fname+"tmp",fname)
 
 def fetch_annotations(args):
     output_dir = args.output.rstrip("/")+"/"
@@ -46,10 +68,10 @@ def fetch_annotations(args):
 
     # fetch mapping file for nomenclature conversions
     assembly_stats_url = 'https://ftp.ncbi.nlm.nih.gov/refseq/H_sapiens/annotation/GRCh38_latest/refseq_identifiers/GRCh38_latest_assembly_report.txt'
-    request = requests.get(assembly_stats_url,allow_redirects=False)
-    if request.status_code==200:
+    req = requests.get(assembly_stats_url,allow_redirects=False)
+    if req.status_code==200:
         with open(output_dir+"mapfile.raw.txt","wb") as outFP:
-            outFP.write(request.content)
+            outFP.write(req.content)
     else:
         assert False,"Invalid mapfile URL: "+assembly_stats_url
 
@@ -63,7 +85,7 @@ def fetch_annotations(args):
         for line in inFP:
             if line[0]=="#":
                 continue
-            cols = line.rstrip("\n").split("\t")
+            cols = line.rstrip("\n").split(",")
             assert len(cols)==2,"incorrect setup file format"
             filename = output_dir+cols[1].split("/")[-1]
             label = cols[0]
@@ -73,13 +95,22 @@ def fetch_annotations(args):
 
     # fetch data
     for label,item in urls.items():
-        request = requests.get(item["url"],allow_redirects=False)
-        if request.status_code == 200:
-            with open(item["filename"],"wb") as outFP:
-                outFP.write(request.content)
-            assert os.path.exists(item["filename"])
+        if os.path.exists(item["url"]):
+            shutil.copy(item["url"],item["filename"])
+        elif item["url"].startswith("http"):
+            req = requests.get(item["url"],allow_redirects=False)
+            if req.status_code == 200:
+                with open(item["filename"],"wb") as outFP:
+                    outFP.write(req.content)
+                assert os.path.exists(item["filename"])
+            else:
+                assert False,'Invalid URL in the setup file: '+item["url"]
+        elif item["url"].startswith("ftp"):
+            with closing(request.urlopen(item["url"])) as inFP:
+                with open(item["filename"],"wb") as outFP:
+                    shutil.copyfileobj(inFP,outFP)
         else:
-            assert False,'Invalid URL in the setup file: '+item["url"]
+            assert False,"unrecognized url format: "+item["url"]
 
 
     # standardize
@@ -149,7 +180,10 @@ def fetch_annotations(args):
 
         # detect which nomenclature is used
         tmp_map_fname = output_dir+"tmp.tsv"
-        get_nomenclature(item["filename"],chrMap,tmp_map_fname)
+        wrong_seqids = get_nomenclature(item["filename"],chrMap,tmp_map_fname)
+        if len(wrong_seqids)>0: # wrong IDs found - remove them from the annotation
+            remove_gtf_seqids(item["filename"],wrong_seqids)
+
 
         gffread_cmd = [args.gffread,"-T",
                        "-m",tmp_map_fname,
@@ -171,7 +205,7 @@ def main(args):
     parser.add_argument("-s",
                         "--setup",
                         required=True,
-                        help="File with a list of urls and labels in a TSV format. The first column of each column is the label to be used throughout analysis and the second column is the url. Lines that start with # are interpreted as comments and skipped")
+                        help="File with a list of urls and labels in a CSV format. The first column of each column is the label to be used throughout analysis and the second column is the url. Lines that start with # are interpreted as comments and skipped")
     parser.add_argument("-o",
                         "--output",
                         required=True,

@@ -24,6 +24,7 @@ struct Globals{
     std::ofstream out_gtf_perfect_fp;
     std::ofstream out_gtf_imperfect_fp;
     std::ofstream out_gtf_nonoverlap_fp;
+    std::ofstream out_no_query_fp;
 
     bool nocdslencheck = false;
     bool annotateknown = false;
@@ -1574,6 +1575,8 @@ public:
         }
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
+        bool is_coding_bundle = false;
+        bool fitted_new = false; // true when at least one input transcript was fitted with a known CDS
         for(auto& tx : this->txs){
             if(!globals.annotateknown && tx.is_template()){
                 continue;
@@ -1602,6 +1605,7 @@ public:
                                     <<"-"<<std::endl;
             }
             else{
+                is_coding_bundle=true;
                 // TODO: when a premature stop-codon is found - needs to be stored as a separate stat
 
                 // find the best chain fit
@@ -1615,10 +1619,12 @@ public:
                     Mods new_mod = tx.fit_new(chain,bundle_seq,this->start,bundle_len);
                     int new_mod_len = chain_len(new_mod.new_chain);
                     if(new_mod.get_score()==0 && new_mod_len>longest_perfect_mod_len){
+                        fitted_new=true;
                         longest_perfect_mod = new_mod;
                         longest_perfect_mod_len = new_mod_len;
                     }
                     else if(!new_mod.get_score()==0 && new_mod_len>longest_imperfect_mod_len){
+                        fitted_new = true;
                         longest_imperfect_mod = new_mod;
                         longest_imperfect_mod_len = new_mod_len;
                     }
@@ -1635,6 +1641,10 @@ public:
                     globals.out_gtf_imperfect_fp<<tx.get_gtf(cur_tid, longest_imperfect_mod)<<std::endl;
                 }
             }
+        }
+
+        if(!fitted_new && is_coding_bundle){ // didn't find any input transcripts to fit annotation to
+            globals.out_no_query_fp<<this->seqid<<this->strand<<this->start<<this->end<<std::endl;
         }
 
         return 0;
@@ -1713,6 +1723,7 @@ int run(std::vector<std::string> known_gtf_fnames, std::string novel_gtf_fname,s
     globals.out_gtf_perfect_fp.open(out_fname+".perfect.gtf");
     globals.out_gtf_imperfect_fp.open(out_fname+".imperfect.gtf");
     globals.out_gtf_nonoverlap_fp.open(out_fname+".nonoverlapping.gtf");
+    globals.out_no_query_fp.open(out_fname+".no_query.txt");
 
     // read from both GTF streams simultaneously
     // only consider CDS from the reference and exons from the novel
@@ -1782,6 +1793,7 @@ int run(std::vector<std::string> known_gtf_fnames, std::string novel_gtf_fname,s
     globals.out_gtf_perfect_fp.close();
     globals.out_gtf_imperfect_fp.close();
     globals.out_gtf_nonoverlap_fp.close();
+    globals.out_no_query_fp.close();
     return 0;
 }
 
@@ -1790,7 +1802,6 @@ enum Opt {CDS       = 'c',
     OUTPUT    = 'o',
     REFERENCE = 'r',
     CLEANREF  = 'l',
-    FILTER    = 'f',
     NOCDSLEN  = 'n',
     ANNOTATEKNOWN = 'k'};
 

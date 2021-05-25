@@ -185,7 +185,7 @@ def gffcmp_multi(args):
         mat_exons.loc[idx_loc] = len(res_exons)
     plt.close('all')
     plt.clf()
-    plot(mat_exons,show_percentages=True,show_counts=True,sort_by="cardinality")
+    plot(mat_exons,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Exon Set Comparison Between Sources')
     plt.savefig(args.output + ".exons.eps")
     mat_exons.to_csv(args.output+".exons.csv")
@@ -193,7 +193,7 @@ def gffcmp_multi(args):
     # compute intron overlaps and plot upset
     plt.close('all')
     plt.clf()
-    plot(mat_introns,show_percentages=True,show_counts=True,sort_by="cardinality")
+    plot(mat_introns,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Intron Set Comparison Between Sources')
     plt.savefig(args.output + ".introns.eps")
     mat_introns.to_csv(args.output+".introns.csv")
@@ -244,7 +244,7 @@ def gffcmp_multi(args):
 
     plt.close('all')
     plt.clf()
-    plot(mat,show_percentages=True,show_counts=True,sort_by="cardinality")
+    plot(mat,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Transcript Set Comparison Between Sources')
     plt.savefig(args.output + ".tx.eps")
     mat.to_csv(args.output+".tx.csv")

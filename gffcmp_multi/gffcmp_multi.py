@@ -136,6 +136,11 @@ def gffcmp_multi(args):
     output_dir = "/".join(args.output.split("/")[:-1])+"/"
     assert os.path.exists(output_dir),"output path is incorrect"
 
+    fig_dir = "/".join(args.output.split("/")[:-1])+"/figs/"
+    if not os.path.exists(fig_dir):
+        os.makedirs(fig_dir)
+    fig_out = fig_dir+args.output.split("/")[-1]
+
     raw_gtf_list = read_setup(args.setup)
 
     # run gffread on all inputs to standardize them
@@ -187,16 +192,16 @@ def gffcmp_multi(args):
     plt.clf()
     plot(mat_exons,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Exon Set Comparison Between Sources')
-    plt.savefig(args.output + ".exons.eps")
-    mat_exons.to_csv(args.output+".exons.csv")
+    plt.savefig(fig_out + ".exons.eps")
+    mat_exons.to_csv(fig_out+".exons.csv")
 
     # compute intron overlaps and plot upset
     plt.close('all')
     plt.clf()
     plot(mat_introns,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Intron Set Comparison Between Sources')
-    plt.savefig(args.output + ".introns.eps")
-    mat_introns.to_csv(args.output+".introns.csv")
+    plt.savefig(fig_out + ".introns.eps")
+    mat_introns.to_csv(fig_out+".introns.csv")
 
     # cycle through annotations and load all transcripts in
     tx_map = dict()
@@ -246,8 +251,8 @@ def gffcmp_multi(args):
     plt.clf()
     plot(mat,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Transcript Set Comparison Between Sources')
-    plt.savefig(args.output + ".tx.eps")
-    mat.to_csv(args.output+".tx.csv")
+    plt.savefig(fig_out + ".tx.eps")
+    mat.to_csv(fig_out+".tx.csv")
 
     
 

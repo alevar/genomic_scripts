@@ -2,6 +2,7 @@ orfanage is a method for identifying the best matching ORF for each transcript i
 The method is designed to identify cases of known ORFs fitting the query transcript both with and without modifications, introduced by additional exons, 
 alternative start and end sites, etc.
 
+```
 orfanage
 -c -i -o [-f -p -r ]
 Arguments:
@@ -11,3 +12,4 @@ Arguments:
 	o/--output	Output name
 	p/--ppptrack	PhyloCSF track (currently in development)
 	r/--reference	Reference fasta
+```

@@ -112,7 +112,8 @@ struct Mods{
                "num_bp_inframe \""+std::to_string(num_bp_inframe)+"\"; "+
                "num_bp_extra \""+std::to_string(num_bp_extra)+"\"; "+
                "num_bp_missing \""+std::to_string(num_bp_missing)+"\"; "+
-               "num_bp_match \""+std::to_string(num_bp_match)+"\";";
+               "num_bp_match \""+std::to_string(num_bp_match)+"\"; "+
+               "next_codon \""+next_codon+"\";";
     }
 };
 
@@ -1575,7 +1576,7 @@ public:
         }
 
         // iterate over each transcript-ORF pair to gauge compatibility - assign compatibility scores
-        bool is_coding_bundle = false;
+        bool is_coding_bundle = !cds_chains.empty();
         bool fitted_new = false; // true when at least one input transcript was fitted with a known CDS
         for(auto& tx : this->txs){
             if(!globals.annotateknown && tx.is_template()){
@@ -1644,7 +1645,7 @@ public:
         }
 
         if(!fitted_new && is_coding_bundle){ // didn't find any input transcripts to fit annotation to
-            globals.out_no_query_fp<<this->seqid<<this->strand<<this->start<<this->end<<std::endl;
+            globals.out_no_query_fp<<this->seqid<<this->strand<<this->start<<"-"<<this->end<<std::endl; // TODO: replace with the proper gtf output with all transcripts that are missing from the template gtfs/sources
         }
 
         return 0;

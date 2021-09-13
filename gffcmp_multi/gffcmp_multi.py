@@ -159,8 +159,10 @@ def gffcmp_multi(args):
     for gp in gtf_pairs:
         gffcmp_cmd = [args.gffcompare, "--no-merge",
                       "-o", args.output + gp[0][0] + "_" + gp[1][0],
-                      "-r", gp[0][1],
-                      gp[1][1]]
+                      "-r", gp[0][1]]
+        if args.debug:
+            gffcmp_cmd.append("--debug")
+        gffcmp_cmd.append(gp[1][1])
         subprocess.call(gffcmp_cmd)
 
         fp_dir = "/".join(gp[1][1].split("/")[:-1]) + "/"
@@ -347,6 +349,9 @@ def main(args):
     parser.add_argument("--keep-tmp",
                         action="store_true",
                         help="keep all final temporary outputs (individual gffcompare results)")
+    parser.add_argument("--debug",
+                        action="store_true",
+                        help="enable debug mode for gffcompare")
     parser.set_defaults(func=gffcmp_multi)
     args = parser.parse_args()
     args.func(args)

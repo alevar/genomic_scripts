@@ -7,7 +7,6 @@
 
 # this script simply pools the latest human annotation sources - unzips and standardizes them into GTF-formatted UCSC nomenclature files
 
-import urllib.request as request
 from contextlib import closing
 import pandas as pd
 import subprocess
@@ -16,6 +15,7 @@ import requests
 import zipfile
 import tarfile
 import shutil
+import urllib
 import gzip
 import sys
 import os
@@ -49,9 +49,9 @@ def get_nomenclature(ann_fname,chr_map,out_fname):
         for k,v in sub_map.items():
             outFP.write(k+" "+v+"\n")
 
-    return seqid
+    return wrong_seqids
 
-def remove_gtf_seqids(fname,seqids): # removes records with the specified IDs from the GTF/GFF file inplace
+def remove_gtf_seqids(fname,seqids,keep_tmp): # removes records with the specified IDs from the GTF/GFF file inplace
     with open(fname+"tmp","w+") as outFP:
         with open(fname,"r") as inFP:
             for line in inFP.readlines():
@@ -59,7 +59,10 @@ def remove_gtf_seqids(fname,seqids): # removes records with the specified IDs fr
                 if seqid in seqids:
                     continue
                 outFP.write(line)
-    shutil.move(fname+"tmp",fname)
+    if keep_tmp:
+        shutil.copy(fname+"tmp",fname)
+    else:
+        shutil.move(fname+"tmp",fname)
 
 def fetch_annotations(args):
     output_dir = args.output.rstrip("/")+"/"
@@ -106,9 +109,15 @@ def fetch_annotations(args):
             else:
                 assert False,'Invalid URL in the setup file: '+item["url"]
         elif item["url"].startswith("ftp"):
-            with closing(request.urlopen(item["url"])) as inFP:
+            req = urllib.request.Request(tem["url"])
+            with urllib.request.urlopen(req) as response:
+                fc = response.read()
                 with open(item["filename"],"wb") as outFP:
-                    shutil.copyfileobj(inFP,outFP)
+                    outFP.write(fc)
+                        # urllib.urlretrieve(item["url"], item["filename"])
+            # with closing(request.urlopen(item["url"])) as inFP:
+            #     with open(item["filename"],"wb") as outFP:
+            #         shutil.copyfileobj(inFP,outFP)
         else:
             assert False,"unrecognized url format: "+item["url"]
 
@@ -132,7 +141,8 @@ def fetch_annotations(args):
                             found=True
                     assert found,"did not locate valid file in the archive: "+item["filename"]
 
-                os.remove(item["filename"])
+                if not args.keep_tmp:
+                    os.remove(item["filename"])
                 item["filename"]=item["filename"].rstrip(".tar.gz")
 
             elif len(item["filename"].split("/")[-1])>4 and item["filename"][-4:].lower()==".tar":
@@ -145,16 +155,19 @@ def fetch_annotations(args):
                             found=True
                     assert found,"did not locate valid file in the archive: "+item["filename"]
 
-                os.remove(item["filename"])
+                if not args.keep_tmp:
+                    os.remove(item["filename"])
                 item["filename"]=item["filename"].rstrip(".tar")
 
             elif len(item["filename"].split("/")[-1])>3 and item["filename"][-3:].lower()==".gz":
                 # run gunzip
-                with gzip.open(item["filename"],'rb') as inFP:
+                with gzip.open(item["filename"], 'rb') as inFP:
+                    fc = inFP.read()
                     with open(item["filename"].rstrip(".gz"),'wb') as outFP:
-                        shutil.copyfileobj(inFP, outFP)
+                        outFP.write(fc)
 
-                os.remove(item["filename"])
+                if not args.keep_tmp:
+                    os.remove(item["filename"])
                 item["filename"]=item["filename"].rstrip(".gz")
 
             elif len(item["filename"].split("/")[-1])>4 and item["filename"][-4:].lower()==".zip":
@@ -168,7 +181,8 @@ def fetch_annotations(args):
                             found=True
                     assert found,"did not locate valid file in the archive: "+item["filename"]
 
-                os.remove(item["filename"])
+                if not args.keep_tmp:
+                    os.remove(item["filename"])
                 item["filename"]=item["filename"].rstrip(".zip")
 
             else:
@@ -182,7 +196,10 @@ def fetch_annotations(args):
         tmp_map_fname = output_dir+"tmp.tsv"
         wrong_seqids = get_nomenclature(item["filename"],chrMap,tmp_map_fname)
         if len(wrong_seqids)>0: # wrong IDs found - remove them from the annotation
-            remove_gtf_seqids(item["filename"],wrong_seqids)
+            if args.keep_tmp:
+                remove_gtf_seqids(item["filename"],wrong_seqids,True)
+            else:
+                remove_gtf_seqids(item["filename"],wrong_seqids,False)
 
 
         gffread_cmd = [args.gffread,"-T",
@@ -192,11 +209,13 @@ def fetch_annotations(args):
         ret = subprocess.call(gffread_cmd)
         assert ret==0,"non-0 return code from gffread"
 
-        os.remove(output_dir+"tmp.tsv")
-        os.remove(item["filename"])
+        if not args.keep_tmp:
+            os.remove(output_dir+"tmp.tsv")
+            os.remove(item["filename"])
         item["filename"] = output_dir+label+".gtf"
 
-    os.remove(output_dir+"mapfile.raw.txt")
+    if not args.keep_tmp:
+        os.remove(output_dir+"mapfile.raw.txt")
 
     return
 
@@ -215,6 +234,9 @@ def main(args):
                         type=str,
                         default="gffread",
                         help="Path to the gffread executable")
+    parser.add_argument("--keep-tmp",
+                        action="store_true",
+                        help="do not remove temporary data")
     parser.set_defaults(func=fetch_annotations)
     args = parser.parse_args()
     args.func(args)

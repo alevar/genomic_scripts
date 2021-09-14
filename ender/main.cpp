@@ -17,10 +17,11 @@
 typedef std::vector<std::array<int,3>> CDS_CHAIN_TYPE; // start,end,phase
 
 struct Globals{
-    bool novel = false;
     bool extra = false;
     bool equal = false;
     bool use_cds = false;
+    bool adjust_single = false;
+    int extra_thresh = MAX_INT;
 
     std::ofstream out_ender_gtf_fp;
 } globals;
@@ -202,6 +203,10 @@ public:
         return this->exons.size();
     }
 
+    int intron_count() const{
+        return this->exons.size()-1;
+    }
+
     bool operator< (const TX& tx) const{
         if(this->get_seqid()!=tx.get_seqid()){
             return this->get_seqid()<tx.get_seqid();
@@ -244,15 +249,15 @@ public:
         else if(this->get_strand()!=tx.get_strand()){
             return false;
         }
-        else if(this->exon_count()<=1 || tx.exon_count()<=1){ // always returns false for single-exon transcripts
+        else if(this->intron_count()<=0 || tx.intron_count()<=0){ // always returns false for single-exon transcripts
             return false;
         }
-        else if(this->exon_count()!=tx.exon_count()){
+        else if(this->intron_count()!=tx.intron_count()){
             return false;
         }
 
         // compare introns
-        for(int i=0;i<=this->exon_count()-2;i++){ // -1 for indexing and -1 to not go past the last exon
+        for(int i=0;i<=this->intron_count();i++){ // -1 for indexing
             if(std::get<1>(this->exons[i])!=std::get<1>(tx.exons[i]) ||
                     std::get<0>(this->exons[i+1])!=std::get<0>(tx.exons[i+1])){
                 return false;
@@ -268,6 +273,10 @@ public:
 
     CDS_CHAIN_TYPE get_exons(){
         return this->exons;
+    }
+
+    std::array<int,3> get_exon(int pos){
+        return this->exons[pos];
     }
 
     std::pair<int,int> get_intron(int first_exon_pos){
@@ -443,7 +452,7 @@ public:
         return (this->get_start()<=e && this->get_end()>=s);
     }
 
-    std::string get_gtf(std::string& tid){
+    std::string get_gtf(){
         std::string gtf_str = "";
         // get transcript line
         gtf_str+=this->seqid+"\t"
@@ -455,7 +464,18 @@ public:
                  +this->strand+"\t"
                  +"."+"\t"
                  +"transcript_id \""+tid+"\"; "
-                 +this->get_attributes()+"\n";
+                 +this->get_attributes()+
+                 +"ender_adjustment \""+std::to_string(this->adjustment)+"\"; ";
+        if(this->is_adjusted){
+            if(this->adjusted_start){
+                gtf_str+="ender_start_source \""+this->adjusted_start_source+"\"; ";
+            }
+            if(this->adjusted_end){
+                gtf_str+="ender_end_source \""+this->adjusted_end_source+"\"; ";
+            }
+        }
+        gtf_str.pop_back();
+        gtf_str+="\n";
         // get exon lines
         for(auto& e : this->exons){
             gtf_str+=this->seqid+"\t"
@@ -469,12 +489,43 @@ public:
                      +"transcript_id \""+tid+"\"; "
                      +this->get_attributes()+"\n";
         }
+        if(this->has_cds()){
+            CDS_CHAIN_TYPE cds_chain;
+            this->build_cds_chain(cds_chain);
+            for(auto& c : cds_chain){
+                gtf_str+=this->seqid+"\t"
+                         +this->source+"\t"
+                         +"CDS"+"\t"
+                         +std::to_string(std::get<0>(c))+"\t"
+                         +std::to_string(std::get<1>(c))+"\t"
+                         +"."+"\t"
+                         +this->strand+"\t"
+                         +std::to_string(std::get<2>(c))+"\t"
+                         +"transcript_id \""+tid+"\"; "
+                         +this->get_attributes()+"\n";
+            }
+        }
         gtf_str.pop_back();
         return gtf_str;
     }
 
     bool is_template(){
         return this->is_templ;
+    }
+
+    void set_is_adjusted(){
+        this->is_adjusted = true;
+    }
+    void set_adjustment(int val){
+        this->adjustment = val;
+    }
+    void set_adjustment_start_source(std::string val){
+        this->adjusted_start = true;
+        this->adjusted_start_source = val;
+    }
+    void set_adjustment_end_source(std::string val){
+        this->adjusted_end = true;
+        this->adjusted_end_source = val;
     }
 
 private:
@@ -489,6 +540,13 @@ private:
     int cds_phase;
     bool is_coding = false;
     std::string source;
+
+    bool is_adjusted = false;
+    int adjustment = -1;
+    bool adjusted_start = false;
+    bool adjusted_end = false;
+    std::string adjusted_start_source = "";
+    std::string adjusted_end_source = "";
 
     std::map<std::string,std::string> attrs;
 };
@@ -568,15 +626,20 @@ public:
         TX nov_tx = TX();
 
         std::array<std::vector<TX>,5> matches;
-        for (auto& nov_tx : this->txs) {
+        for (auto& nov_tx : this->txs) { // TODO: need to handle single-exon novel transcripts separately
             matches.fill(std::vector<TX>());
-//            if(std::strcmp(tx.get_tid().c_str(),"ALL_00179806")==0){
+//            if(std::strcmp(nov_tx.get_tid().c_str(),"ALL_15973932")==0){
 //                std::cout<<"found"<<std::endl;
 //            }
 
             if(!nov_tx.is_template()) {
+                if(!globals.adjust_single && nov_tx.exon_count()==1){ // if not explicitely requested - skip single-exon query transcripts
+                    continue;
+                }
                 for (auto& ref_tx : this->txs) {
                     if(ref_tx.is_template()){
+                        // put everything into the ELSE container for a fall-back (can examine the same transcript for both ends)
+                        matches[EQST::ELSE].push_back(ref_tx);
                         int equality_status = evaluate_chains(ref_tx,nov_tx);
                         switch (equality_status) {
                             case EQST::EQ: // found full intron-chain match
@@ -591,47 +654,41 @@ public:
                             case EQST::EQm1: // found matching by last intron
                                 matches[equality_status].push_back(ref_tx);
                                 break;
-                            case EQST::SINGLE: // single-exon ref or template transcript
-                                matches[equality_status].push_back(ref_tx);
-                                break;
+//                            case EQST::ELSE: // add everything else to a separate container - to be evaluated based on closest end in case of no intron matches
+//                                matches[equality_status].push_back(ref_tx);
                             default:
                                 break;
                         }
                     }
                 }
 
-                // TODO: add clause to correct_ends to perorm correction based on closest end only if no matching introns are available
-
                 // after the transcripts have been sorted - pick the one with the closest end without violating CDS
                 int res = correct_ends(matches,nov_tx);
                 if(res==-1){
                     std::cerr<<"could not perform correction of the transcript: "<<nov_tx.get_tid()<<std::endl;
                 }
+                globals.out_ender_gtf_fp<<nov_tx.get_gtf()<<std::endl;
             }
         }
-
-        // TODO: need handling single-exon transcripts
-
-        // logic
-
-        // if identical to the reference - proceed as is
-        // if any CDSs within the bundle - needs to be taken into account such that no CDS is being cut
-
-        // use maximum proximity threshold - how close do 3' and 5' ends have to be for merging
-
-        // Find all the transcripts with the same first intron - and fix the start site to the same coordinate as the reference
 
         return 0;
     }
 
-    bool can_trim(TX& tx,int start,int end){ // checks CDS (and potentially other features to assert the trimming wont disrupt anything
-        if(!tx.has_cds()){
-            return true;
+    bool can_trim(TX& tx,int start,int end,bool check_thresh){ // checks CDS (and potentially other features to assert the trimming wont disrupt anything
+        if(check_thresh){
+            bool thresh_check = std::abs(start-std::get<0>(tx.get_exon(0)))<=globals.extra_thresh && std::abs(end>=std::get<1>(tx.get_exon(tx.exon_count()-1)))<=globals.extra_thresh;
+            if(!thresh_check){
+                return false;
+            }
         }
-        return start>tx.get_cds_start() || end<tx.get_cds_end();
+        bool coord_check = start<=std::get<1>(tx.get_exon(0)) && end>=std::get<0>(tx.get_exon(tx.exon_count()-1));
+        if(!globals.use_cds || !tx.has_cds()){
+            return coord_check;
+        }
+        return coord_check && start<=tx.get_cds_start() && end>=tx.get_cds_end();
     }
 
-    int _correct_start(std::vector<TX>& matches,TX& nov_tx){
+    int _correct_start(std::vector<TX>& matches,TX& nov_tx,bool check_thresh){
         bool trimmed = false;
 
         // begin by sorting the elements by their proximity to the nov_tx start
@@ -641,16 +698,18 @@ public:
             });
             // now that they are sorted accordingly - we can iterate through to get the closest one and check for any assertions
             for(auto& m: matches){
-                if(!trimmed && can_trim(nov_tx,m.get_start(),nov_tx.get_end())){
+                if(!trimmed && can_trim(nov_tx,m.get_start(),nov_tx.get_end(),check_thresh)){
                     nov_tx.set_start(m.get_start());
                     trimmed = true;
+                    nov_tx.set_is_adjusted();
+                    nov_tx.set_adjustment_start_source(m.get_tid());
                 }
             }
         }
         return trimmed;
     }
 
-    int _correct_end(std::vector<TX>& matches,TX& nov_tx){
+    int _correct_end(std::vector<TX>& matches,TX& nov_tx,bool check_thresh){
         bool trimmed = false;
 
         // begin by sorting the elements by their proximity to the nov_tx start
@@ -660,9 +719,11 @@ public:
             });
             // now that they are sorted accordingly - we can iterate through to get the closest one and check for any assertions
             for(auto& m: matches){
-                if(!trimmed && can_trim(nov_tx,nov_tx.get_start(),m.get_end())){
+                if(!trimmed && can_trim(nov_tx,nov_tx.get_start(),m.get_end(),check_thresh)){
                     nov_tx.set_end(m.get_end());
                     trimmed = true;
+                    nov_tx.set_is_adjusted();
+                    nov_tx.set_adjustment_end_source(m.get_tid());
                 }
             }
         }
@@ -671,30 +732,32 @@ public:
 
     int correct_ends(std::array<std::vector<TX>,5>& matches,TX& nov_tx){
 
-        int status = -1;
-
-        if(std::get<EQST::EQ>(matches).size()>1){
-            std::cout<<"match"<<std::endl;
-        }
-
-        bool trimmed_start = _correct_start(std::get<EQST::EQ>(matches),nov_tx);
+        bool trimmed_start = _correct_start(std::get<EQST::EQ>(matches),nov_tx,false);
         if(!trimmed_start){
-            trimmed_start = _correct_start(std::get<EQST::EQ1m1>(matches),nov_tx);
+            trimmed_start = _correct_start(std::get<EQST::EQ1m1>(matches),nov_tx,false);
         }
         if(!trimmed_start){
-            trimmed_start = _correct_start(std::get<EQST::EQ1>(matches),nov_tx);
+            trimmed_start = _correct_start(std::get<EQST::EQ1>(matches),nov_tx,false);
+        }
+        if(!trimmed_start){
+            trimmed_start = _correct_start(std::get<EQST::ELSE>(matches),nov_tx,true);
         }
 
 
         // now the same for the end
-        bool trimmed_end = _correct_end(std::get<EQST::EQ>(matches),nov_tx);
+        bool trimmed_end = _correct_end(std::get<EQST::EQ>(matches),nov_tx,false);
         if(!trimmed_end){
-            trimmed_end = _correct_end(std::get<EQST::EQ1m1>(matches),nov_tx);
+            trimmed_end = _correct_end(std::get<EQST::EQ1m1>(matches),nov_tx,false);
         }
         if(!trimmed_end){
-            trimmed_end = _correct_end(std::get<EQST::EQm1>(matches),nov_tx);
+            trimmed_end = _correct_end(std::get<EQST::EQm1>(matches),nov_tx,false);
+        }
+        if(!trimmed_end) {
+            trimmed_end = _correct_end(std::get<EQST::ELSE>(matches), nov_tx,true);
         }
 
+
+        int status = -1;
         if(trimmed_start && trimmed_end){
             status = EQST::EQ;
         }
@@ -708,13 +771,15 @@ public:
             status = -1;
         }
 
+        nov_tx.set_adjustment(status);
+
         return status;
     }
 
     // evaluate
     int evaluate_chains(TX& tx1,TX& tx2){
-        if(tx1.exon_count()==1 || tx2.exon_count()==1){
-            return EQST::SINGLE;
+        if(tx1.intron_count()==0 || tx2.intron_count()==0){
+            return EQST::ELSE;
         }
 
         if(tx1.intron_eq(tx2)){
@@ -722,7 +787,7 @@ public:
         }
 
         bool eq1 = tx1.get_intron(0)==tx2.get_intron(0);
-        bool eqm1 = tx1.get_intron(tx1.exon_count()-2)==tx2.get_intron(tx2.exon_count()-2); // -2 for 0-based and to indicate second to last exon (-1-1)
+        bool eqm1 = tx1.get_intron(tx1.intron_count()-1)==tx2.get_intron(tx2.intron_count()-1); // -1 for 0-based
         if(eq1 && eqm1){
             return EQST::EQ1m1;
         }
@@ -733,7 +798,7 @@ public:
             return EQST::EQm1;
         }
         else{
-            return -1;
+            return EQST::ELSE; // everything else goes here
         }
     }
 private:
@@ -741,7 +806,7 @@ private:
                  EQ1m1, // first and last intron equality
                  EQ1, // first intron equal
                  EQm1, // last intron equal
-                 SINGLE // single exon
+                 ELSE, // everything else goes here
                  };
 
     std::vector<TX> txs;
@@ -844,9 +909,10 @@ enum Opt {  REFERENCE   = 'r',
             CDS         = 'c',
             INPUT       = 'i',
             OUTPUT      = 'o',
-            NOVEL       = 'n',
             EXTRA       = 'e',
-            EQUAL       = 'q'};
+            EQUAL       = 'q',
+            SINGLE      = 's',
+            EXTRA_THRESH= 't'};
 
 int main(int argc, char** argv) {
 
@@ -855,9 +921,10 @@ int main(int argc, char** argv) {
     args.add_string(Opt::INPUT, "input", "", "Input GTF with transcripts to be corrected", true);
     args.add_string(Opt::OUTPUT, "output", "", "Output name", true);
     args.add_flag(Opt::CDS,"cds","use CDS features in the reference set",false);
-    args.add_flag(Opt::NOVEL,"novel","Perform correction of novel loci based on the most common ends",false);
     args.add_flag(Opt::EXTRA,"extra","perform adjustment based on additional data provided (chip-seq, etc)",false);
     args.add_flag(Opt::EQUAL, "equal","only adjust the coordinates of the novel transcripts which match intron chain of any reference transcripts",false);
+    args.add_flag(Opt::SINGLE,"single","perform adjustment of the single-exon query transcripts based on the closest 3' and 5' ends from both single and multi-exon transcripts",false);
+    args.add_int(Opt::EXTRA_THRESH,"thresh",MAX_INT,"the maximum distance between ends when performing correction of transcripts with no intron match to the reference",false);
 
     if(argc <= 1 || strcmp(argv[1], "--help") == 0){
         std::cerr << args.get_help() << std::endl;
@@ -896,10 +963,11 @@ int main(int argc, char** argv) {
         if_ss.close();
     }
 
-    globals.novel = args.get_flag(Opt::NOVEL);
     globals.extra = args.get_flag(Opt::EXTRA);
     globals.equal = args.get_flag(Opt::EQUAL);
     globals.use_cds = args.get_flag(Opt::CDS);
+    globals.adjust_single = args.get_flag(Opt::SINGLE);
+    globals.extra_thresh = args.get_int(Opt::EXTRA_THRESH);
 
     // run
     run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT));

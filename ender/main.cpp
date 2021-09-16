@@ -6,7 +6,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <set>
 #include <map>
 
 #include <gclib/gff.h>
@@ -22,6 +21,7 @@ struct Globals{
     bool use_cds = false;
     bool adjust_single = false;
     int extra_thresh = MAX_INT;
+    int max_extend_thresh = MAX_INT;
 
     std::ofstream out_ender_gtf_fp;
 } globals;
@@ -257,7 +257,7 @@ public:
         }
 
         // compare introns
-        for(int i=0;i<=this->intron_count();i++){ // -1 for indexing
+        for(int i=0;i<this->intron_count();i++){
             if(std::get<1>(this->exons[i])!=std::get<1>(tx.exons[i]) ||
                     std::get<0>(this->exons[i+1])!=std::get<0>(tx.exons[i+1])){
                 return false;
@@ -327,14 +327,14 @@ public:
     int get_start() const{
         return std::get<0>(this->exons.front());
     }
-    int set_end(int new_end){
+    void set_end(int new_end){
         if(new_end<std::get<0>(this->exons[this->exons.size()-1])){ // if smaller than the start of last exon
             std::cerr<<"incompatible coordinate for the new end"<<std::endl;
             exit(-1);
         }
         std::get<1>(this->exons[this->exons.size()-1]) = new_end;
     }
-    int set_start(int new_start){
+    void set_start(int new_start){
         if(new_start>std::get<1>(this->exons[0])){ // if greater than the end of the first exon
             std::cerr<<"incompatible coordinate for the new start"<<std::endl;
             exit(-1);
@@ -486,8 +486,7 @@ public:
                      +"."+"\t"
                      +this->strand+"\t"
                      +"."+"\t"
-                     +"transcript_id \""+tid+"\"; "
-                     +this->get_attributes()+"\n";
+                     +"transcript_id \""+tid+"\";\n";
         }
         if(this->has_cds()){
             CDS_CHAIN_TYPE cds_chain;
@@ -501,8 +500,7 @@ public:
                          +"."+"\t"
                          +this->strand+"\t"
                          +std::to_string(std::get<2>(c))+"\t"
-                         +"transcript_id \""+tid+"\"; "
-                         +this->get_attributes()+"\n";
+                         +"transcript_id \""+tid+"\";\n";
             }
         }
         gtf_str.pop_back();
@@ -621,51 +619,44 @@ public:
     }
 
     int process(Globals& globals){
-        // do any transcripts match the reference?
-        TX ref_tx = TX();
-        TX nov_tx = TX();
 
         std::array<std::vector<TX>,5> matches;
-        for (auto& nov_tx : this->txs) { // TODO: need to handle single-exon novel transcripts separately
-            matches.fill(std::vector<TX>());
-//            if(std::strcmp(nov_tx.get_tid().c_str(),"ALL_15973932")==0){
-//                std::cout<<"found"<<std::endl;
-//            }
+        for (TX& nov_tx : this->txs) { // TODO: need to handle single-exon novel transcripts separately
+            matches.fill(std::vector<TX>{});
 
             if(!nov_tx.is_template()) {
-                if(!globals.adjust_single && nov_tx.exon_count()==1){ // if not explicitely requested - skip single-exon query transcripts
-                    continue;
-                }
-                for (auto& ref_tx : this->txs) {
-                    if(ref_tx.is_template()){
-                        // put everything into the ELSE container for a fall-back (can examine the same transcript for both ends)
-                        matches[EQST::ELSE].push_back(ref_tx);
-                        int equality_status = evaluate_chains(ref_tx,nov_tx);
-                        switch (equality_status) {
-                            case EQST::EQ: // found full intron-chain match
-                                matches[equality_status].push_back(ref_tx);
-                                break;
-                            case EQST::EQ1m1: // found matching first and last introns
-                                matches[equality_status].push_back(ref_tx);
-                                break;
-                            case EQST::EQ1: // found matching by first intron
-                                matches[equality_status].push_back(ref_tx);
-                                break;
-                            case EQST::EQm1: // found matching by last intron
-                                matches[equality_status].push_back(ref_tx);
-                                break;
-//                            case EQST::ELSE: // add everything else to a separate container - to be evaluated based on closest end in case of no intron matches
-//                                matches[equality_status].push_back(ref_tx);
-                            default:
-                                break;
+                if(globals.adjust_single || nov_tx.exon_count()!=1) {
+                    for (TX &ref_tx: this->txs) {
+                        if (ref_tx.is_template()) {
+//                            if(std::strcmp(ref_tx.get_tid().c_str(),"ENST00000450305.2")==0 && std::strcmp(nov_tx.get_tid().c_str(),"ALL_00405811")==0){
+//                                std::cout<<"found"<<std::endl;
+//                            }
+                            // put everything into the ELSE container for a fall-back (can examine the same transcript for both ends)
+                            matches[EQST::ELSE].push_back(ref_tx);
+                            int equality_status = evaluate_chains(ref_tx, nov_tx);
+                            switch (equality_status) {
+                                case EQST::EQ: // found full intron-chain match
+                                    matches[equality_status].push_back(ref_tx);
+                                    break;
+                                case EQST::EQ1m1: // found matching first and last introns
+                                    matches[equality_status].push_back(ref_tx);
+                                    break;
+                                case EQST::EQ1: // found matching by first intron
+                                    matches[equality_status].push_back(ref_tx);
+                                    break;
+                                case EQST::EQm1: // found matching by last intron
+                                    matches[equality_status].push_back(ref_tx);
+                                    break;
+                                default:
+                                    break;
+                            }
                         }
                     }
-                }
-
-                // after the transcripts have been sorted - pick the one with the closest end without violating CDS
-                int res = correct_ends(matches,nov_tx);
-                if(res==-1){
-                    std::cerr<<"could not perform correction of the transcript: "<<nov_tx.get_tid()<<std::endl;
+                    // after the transcripts have been sorted - pick the one with the closest end without violating CDS
+                    int res = correct_ends(matches,nov_tx);
+                    if(res==-1){
+                        std::cerr<<"could not perform correction of the transcript: "<<nov_tx.get_tid()<<std::endl;
+                    }
                 }
                 globals.out_ender_gtf_fp<<nov_tx.get_gtf()<<std::endl;
             }
@@ -691,11 +682,18 @@ public:
     int _correct_start(std::vector<TX>& matches,TX& nov_tx,bool check_thresh){
         bool trimmed = false;
 
+        int max_extension_thresh = globals.max_extend_thresh;
+        auto sort_lambda = [nov_tx,max_extension_thresh]( const TX& lhs, const TX& rhs){
+            int lx = lhs.get_start()-nov_tx.get_start();
+            lx = (lx<0 && std::abs(lx)<max_extension_thresh) ? MAX_INT : std::abs(lx);
+            int rx = rhs.get_start()-nov_tx.get_start();
+            lx = (rx<0 && std::abs(rx)<max_extension_thresh) ? MAX_INT : std::abs(rx);
+            return lx < rx;
+        };
+
         // begin by sorting the elements by their proximity to the nov_tx start
         if(!matches.empty()){ // found perfect match - let's trim
-            sort(matches.begin( ), matches.end( ), [nov_tx]( const TX& lhs, const TX& rhs){
-                return std::abs(lhs.get_start()-nov_tx.get_start()) < std::abs(rhs.get_start()-nov_tx.get_start());
-            });
+            std::sort(matches.begin( ), matches.end( ), sort_lambda);
             // now that they are sorted accordingly - we can iterate through to get the closest one and check for any assertions
             for(auto& m: matches){
                 if(!trimmed && can_trim(nov_tx,m.get_start(),nov_tx.get_end(),check_thresh)){
@@ -712,11 +710,18 @@ public:
     int _correct_end(std::vector<TX>& matches,TX& nov_tx,bool check_thresh){
         bool trimmed = false;
 
+        int max_extension_thresh = globals.max_extend_thresh;
+        auto sort_lambda = [nov_tx,max_extension_thresh]( const TX& lhs, const TX& rhs){
+            int lx = nov_tx.get_end()-lhs.get_end();
+            lx = (lx<0 && std::abs(lx)<max_extension_thresh) ? MAX_INT : std::abs(lx);
+            int rx = nov_tx.get_end()-rhs.get_end();
+            lx = (rx<0 && std::abs(rx)<max_extension_thresh) ? MAX_INT : std::abs(rx);
+            return lx < rx;
+        };
+
         // begin by sorting the elements by their proximity to the nov_tx start
         if(!matches.empty()){ // found perfect match - let's trim
-            sort(matches.begin( ), matches.end( ), [nov_tx]( const TX& lhs, const TX& rhs){
-                return std::abs(lhs.get_end()-nov_tx.get_end()) < std::abs(rhs.get_end()-nov_tx.get_end());
-            });
+            sort(matches.begin( ), matches.end( ), sort_lambda);
             // now that they are sorted accordingly - we can iterate through to get the closest one and check for any assertions
             for(auto& m: matches){
                 if(!trimmed && can_trim(nov_tx,nov_tx.get_start(),m.get_end(),check_thresh)){
@@ -776,6 +781,8 @@ public:
         return status;
     }
 
+    // TODO: does not preserve all attributes
+
     // evaluate
     int evaluate_chains(TX& tx1,TX& tx2){
         if(tx1.intron_count()==0 || tx2.intron_count()==0){
@@ -831,7 +838,7 @@ public:
             exit(1);
         }
         GffReader gffReader(gff_file,false,false);
-        gffReader.readAll();
+        gffReader.readAll(true);
 
 
         for(int i=0;i<gffReader.gflst.Count();++i) {
@@ -874,7 +881,7 @@ private:
 };
 
 int run(std::vector<std::string> known_gtf_fnames, std::string novel_gtf_fname,std::string out_fname){
-    globals.out_ender_gtf_fp.open(out_fname+".ender.gtf");
+    globals.out_ender_gtf_fp.open(out_fname);
 
     // read from all the reference streams as well as the query stream
     // form bundles (all overlapping transcripts)
@@ -912,7 +919,8 @@ enum Opt {  REFERENCE   = 'r',
             EXTRA       = 'e',
             EQUAL       = 'q',
             SINGLE      = 's',
-            EXTRA_THRESH= 't'};
+            EXTRA_THRESH= 't',
+            MAX_EXTEND_THRESH = 'm'};
 
 int main(int argc, char** argv) {
 
@@ -925,7 +933,7 @@ int main(int argc, char** argv) {
     args.add_flag(Opt::EQUAL, "equal","only adjust the coordinates of the novel transcripts which match intron chain of any reference transcripts",false);
     args.add_flag(Opt::SINGLE,"single","perform adjustment of the single-exon query transcripts based on the closest 3' and 5' ends from both single and multi-exon transcripts",false);
     args.add_int(Opt::EXTRA_THRESH,"thresh",MAX_INT,"the maximum distance between ends when performing correction of transcripts with no intron match to the reference",false);
-
+    args.add_int(Opt::MAX_EXTEND_THRESH,"extend",MAX_INT,"the proximity threshold for reference ends which extend past the query ends (query needs extension instead of shortening)",false);
     if(argc <= 1 || strcmp(argv[1], "--help") == 0){
         std::cerr << args.get_help() << std::endl;
         exit(1);
@@ -968,6 +976,7 @@ int main(int argc, char** argv) {
     globals.use_cds = args.get_flag(Opt::CDS);
     globals.adjust_single = args.get_flag(Opt::SINGLE);
     globals.extra_thresh = args.get_int(Opt::EXTRA_THRESH);
+    globals.max_extend_thresh = args.get_int(Opt::MAX_EXTEND_THRESH);
 
     // run
     run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT));

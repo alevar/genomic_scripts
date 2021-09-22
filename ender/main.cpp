@@ -655,7 +655,7 @@ public:
                     // after the transcripts have been sorted - pick the one with the closest end without violating CDS
                     int res = correct_ends(matches,nov_tx);
                     if(res==-1){
-                        std::cerr<<"could not perform correction of the transcript: "<<nov_tx.get_tid()<<std::endl;
+//                        std::cerr<<"could not perform correction of the transcript: "<<nov_tx.get_tid()<<std::endl;
                     }
                 }
                 globals.out_ender_gtf_fp<<nov_tx.get_gtf()<<std::endl;
@@ -665,9 +665,16 @@ public:
         return 0;
     }
 
-    bool can_trim(TX& tx,int start,int end,bool check_thresh){ // checks CDS (and potentially other features to assert the trimming wont disrupt anything
+    bool can_trim(TX& tx,int start,int end,bool check_thresh){ // checks CDS (and potentially other features to assert the trimming won't disrupt anything
         if(check_thresh){
             bool thresh_check = std::abs(start-std::get<0>(tx.get_exon(0)))<=globals.extra_thresh && std::abs(end>=std::get<1>(tx.get_exon(tx.exon_count()-1)))<=globals.extra_thresh;
+
+            // check the maximum extension threshold
+            int x = start-tx.get_start();
+            thresh_check = (x<0 && std::abs(x)>globals.max_extend_thresh) ? false : thresh_check;
+            int y = tx.get_end()-end;
+            thresh_check = (y<0 && std::abs(y)>globals.max_extend_thresh) ? false : thresh_check;
+
             if(!thresh_check){
                 return false;
             }
@@ -682,13 +689,8 @@ public:
     int _correct_start(std::vector<TX>& matches,TX& nov_tx,bool check_thresh){
         bool trimmed = false;
 
-        int max_extension_thresh = globals.max_extend_thresh;
-        auto sort_lambda = [nov_tx,max_extension_thresh]( const TX& lhs, const TX& rhs){
-            int lx = lhs.get_start()-nov_tx.get_start();
-            lx = (lx<0 && std::abs(lx)<max_extension_thresh) ? MAX_INT : std::abs(lx);
-            int rx = rhs.get_start()-nov_tx.get_start();
-            lx = (rx<0 && std::abs(rx)<max_extension_thresh) ? MAX_INT : std::abs(rx);
-            return lx < rx;
+        auto sort_lambda = [nov_tx]( const TX& lhs, const TX& rhs){
+            return std::abs(lhs.get_start()-nov_tx.get_start()) < std::abs(rhs.get_start()-nov_tx.get_start());
         };
 
         // begin by sorting the elements by their proximity to the nov_tx start
@@ -710,13 +712,8 @@ public:
     int _correct_end(std::vector<TX>& matches,TX& nov_tx,bool check_thresh){
         bool trimmed = false;
 
-        int max_extension_thresh = globals.max_extend_thresh;
-        auto sort_lambda = [nov_tx,max_extension_thresh]( const TX& lhs, const TX& rhs){
-            int lx = nov_tx.get_end()-lhs.get_end();
-            lx = (lx<0 && std::abs(lx)<max_extension_thresh) ? MAX_INT : std::abs(lx);
-            int rx = nov_tx.get_end()-rhs.get_end();
-            lx = (rx<0 && std::abs(rx)<max_extension_thresh) ? MAX_INT : std::abs(rx);
-            return lx < rx;
+        auto sort_lambda = [nov_tx]( const TX& lhs, const TX& rhs){
+            return std::abs(nov_tx.get_end()-lhs.get_end()) < std::abs(nov_tx.get_end()-rhs.get_end());
         };
 
         // begin by sorting the elements by their proximity to the nov_tx start
@@ -780,8 +777,6 @@ public:
 
         return status;
     }
-
-    // TODO: does not preserve all attributes
 
     // evaluate
     int evaluate_chains(TX& tx1,TX& tx2){

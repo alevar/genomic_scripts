@@ -1,0 +1,1 @@
+Seeder is a simple method to use coverage data to identify which single-exon transcripts are present in the dataset. The method does not take into account coverage fluctuations and does not perform assembly. Rather it simply outputs which transcript are covered above a certain threshold in the dataset.

@@ -299,19 +299,28 @@ public:
         return true;
     }
 
-    int poverlap(TX& tx){
+    int poverlap(TX& tx,bool consider_strand = true, bool exon_by_exon = true){ // computes percent overlap between two transcripts
         int po = 0;
 
         if(this->get_seqid()!=tx.get_seqid()){
             return 0;
         }
-        else if(this->get_strand()!=tx.get_strand()){
+        else if(consider_strand && this->get_strand()!=tx.get_strand()){
             return 0;
         }
         else{ // count number of matching bases
-            int pop = this->num_matching_bp(tx.exons);
-            return pop;
+            int nmbp = this->num_matching_bp(tx.exons); // TODO: after fixed - need to fix adder and other methods that use this method....
+            float pop = (static_cast<float>(nmbp)*100.0)/static_cast<float>(this->length());
+            return static_cast<int>(pop);
         }
+    }
+
+    int length(){
+        int rl = 0;
+        for(auto& e : this->exons){
+            rl+=(std::get<1>(e)-std::get<0>(e))+1;
+        }
+        return rl;
     }
 
     friend std::ostream& operator<<(std::ostream& os, const TX& t){
@@ -819,6 +828,8 @@ enum Opt {  REFERENCE   = 'r',
             INPUT       = 'i',
             OUTPUT      = 'o',
             PO          = 'p'};
+
+// TODO: add ability to compare annotations and add 
 
 int main(int argc, char** argv) {
 

@@ -895,5 +895,9 @@ int main(int argc, char** argv) {
     // run
     run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT));
 
+    // TODO: add option to add novel genes/transcripts and annotate them using the CHESS format
+    //    however polycistronic will get assigned to theoverlapping genes which is not what we want....
+    //    perhaps we should just add them manually
+
     return 0;
 }

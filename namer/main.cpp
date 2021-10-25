@@ -800,6 +800,9 @@ public:
     ~Locus()=default;
 
     bool add_tx(TX& tx){
+//        if(std::strcmp("CHS.24921.23",tx.get_tid().c_str())==0){
+//            std::cerr<<"found"<<std::endl;
+//        }
         std::string tid = tx.get_tid();
         std::pair<int,int> gid_tid;
         int res = parse_chs_id(tid,gid_tid);
@@ -852,6 +855,9 @@ public:
 
         // iterate over and allocate transcripts to groups base don the overlap with the stack contents
         for(auto& t : this->txs){
+//            if(std::strcmp("CHS.24921.23",t.get_tid().c_str())==0){
+//                std::cout<<"found"<<std::endl;
+//            }
             if(!res.empty() && res.back().overlaps(t)){
                 res.back().add_tx(t);
             }
@@ -945,6 +951,9 @@ public:
         std::map<int,Locus> tmp_new_loci; // these will be added to the locus list after overlaps are evaluated
         std::vector<TX> tmp_new_txs;
         for(auto& l : this->loci){
+//            if(l.second.get_gid()==24453){
+//                std::cout<<"found"<<std::endl;
+//            }
             splits.clear();
             int num_loci = l.second.split(splits);
             if(num_loci==1){
@@ -964,9 +973,16 @@ public:
                     s.set_gid(cur_gid);
                     tmp_new_loci.insert(std::make_pair(cur_gid,s));
 
-                    for(auto& lt : s){ // iterate over the transcripts of the locus
+                    int next_available_tid = 0;
+                    for(auto& lt : s) { // iterate over the transcripts of the locus
+                        if (cur_gid != splits[0].get_gid()) {
+                            std::string new_tid = "CHS." + std::to_string(lt.get_gid()) + "." +std::to_string(next_available_tid);
+                            lt.set_tid(new_tid);
+                            next_available_tid+=1;
+                        }
                         tmp_new_txs.push_back(lt);
                     }
+
 
                     this->max_gid+=1;
                     cur_gid=this->max_gid;
@@ -992,7 +1008,7 @@ public:
     }
 
     int get_next_available_gid(){
-        return this->max_gid;
+        return this->max_gid+1;
     }
 
     void increment_max_gid(){
@@ -1271,18 +1287,22 @@ public:
         build_compat_mat(this->txs,compat);
 
         // evaluate queries
+
+        std::set<std::string> bundle_tids; // quick lookup of which transcript ids have already been assigned
+        std::pair<std::set<std::string>::iterator,bool> bt_it;
+
         std::vector<std::array<int,3>> template_overlaps; // holds transcript index, type of overlap and number of bases matched
         std::vector<TX> novel_txs;
         int qidx=0;
         for(auto& txv : compat){
             template_overlaps.clear();
             TX& q = this->txs[qidx];
-            if(std::strcmp("ALL_26275383",q.get_tid().c_str())==0){
-                std::cout<<"found"<<std::endl;
-            }
-            if(std::strcmp("ALL_26274164",q.get_tid().c_str())==0){
-                std::cout<<"found"<<std::endl;
-            }
+//            if(std::strcmp("ALL_11176111",q.get_tid().c_str())==0){
+//                std::cout<<"found"<<std::endl;
+//            }
+//            if(std::strcmp("ALL_10452156",q.get_tid().c_str())==0){
+//                std::cout<<"found"<<std::endl;
+//            }
 
             if(!q.is_template()){
                 q.add_attribute("namer_original_id",q.get_tid());
@@ -1324,7 +1344,12 @@ public:
                             new_tid = t.get_tid();
                         }
                         else{
-                           new_tid = "CHS."+std::to_string(t.get_gid())+"."+std::to_string(transcriptome.get_next_available_tid(t.get_gid()));
+                            int next_available_tid = transcriptome.get_next_available_tid(t.get_gid());
+                            new_tid = "CHS."+std::to_string(t.get_gid())+"."+std::to_string(next_available_tid);
+                        }
+                        bt_it = bundle_tids.insert(new_tid);
+                        if(!bt_it.second){
+                            q.add_attribute("namer_status","duplicate");
                         }
                         q.set_tid(new_tid);
                         transcriptome.add2locus(q);

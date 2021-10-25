@@ -1,0 +1,12 @@
+**/cmake-build-debug
+**/cmake-build-release
+**/include
+**/res
+**/.idea
+**/venv
+**/examples
+**/data
+*.png
+*.svg
+*.fasta
+*.csv

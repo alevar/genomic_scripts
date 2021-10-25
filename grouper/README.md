@@ -1,0 +1,1 @@
+Namer is a tool used to assign transcript and gene ids for a file based on the previous release

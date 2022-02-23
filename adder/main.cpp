@@ -699,7 +699,7 @@ public:
     }
 
     int process(Globals& globals){
-        // search for intron-compatible transcripts and label accordingly
+        // search for intron-compatible transcripts and label accordingly - if not found - need to add the respective transcripts to the annotation (if mode enabled)
         std::string t_tid,t_gid,t_name;
         for(auto& q : this->txs){
             if(!q.is_template()){
@@ -725,7 +725,7 @@ public:
         return 0;
     }
 
-    // we need som e quantifiable measure here
+    // we need some quantifiable measure here
     int get_overlapping_txs(TX& q,std::vector<TX>& ops,bool template_only){ // returns the count of overlapping transcripts
         for(auto& t : this->txs){
             if(!template_only || t.is_template()){
@@ -796,7 +796,7 @@ private:
     std::vector<TX> tx_vec;
 };
 
-int run(std::vector<std::pair<std::string,std::string>>& known_gtf_fnames, const std::string& novel_gtf_fname,const std::string& out_fname){
+int run(std::vector<std::pair<std::string,std::string>>& known_gtf_fnames, const std::string& novel_gtf_fname,const std::string& out_fname,std::vector<std::pair<std::string,std::string>>& attr_key_vals){
     globals.out_adder_gtf_fp.open(out_fname);
 
     // load the reference GFF
@@ -827,9 +827,8 @@ int run(std::vector<std::pair<std::string,std::string>>& known_gtf_fnames, const
 enum Opt {  REFERENCE   = 'r',
             INPUT       = 'i',
             OUTPUT      = 'o',
-            PO          = 'p'};
-
-// TODO: add ability to compare annotations and add 
+            PO          = 'p',
+            AKV         = 'a'};
 
 int main(int argc, char** argv) {
 
@@ -840,6 +839,8 @@ int main(int argc, char** argv) {
     args.add_string(Opt::INPUT, "input", "", "Input GTF with transcripts to be corrected", true);
     args.add_string(Opt::OUTPUT, "output", "", "Output name", true);
     args.add_int(Opt::PO,"po",100,"Percent overlap to consider for marking single-exon transcripts",false);
+    args.add_multi_string(Opt::AKV,"akv","","Comma-separated list of Key:value pairs to add to the attributes field for reference transcripts being added to the input.",false);
+
     if(argc <= 1 || strcmp(argv[1], "--help") == 0){
         std::cerr << args.get_help() << std::endl;
         exit(1);
@@ -869,6 +870,7 @@ int main(int argc, char** argv) {
     }
     if_ss.close();
 
+    // get the reference list
     const std::vector<std::string> knowns_tmp = args.get_multi_string(Opt::REFERENCE);
     std::vector<std::pair<std::string,std::string>> knowns;
     std::string key,val;
@@ -892,12 +894,24 @@ int main(int argc, char** argv) {
         if_ss.close();
     }
 
-    // run
-    run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT));
+    // Parse the key-value pairs
+    const std::vector<std::string> akvs_tmp = args.get_multi_string(Opt::AKV);
+    std::vector<std::pair<std::string,std::string>> akvs;
+    col_pos = 0;
+    for(auto& a : akvs_tmp){
+        col_pos = a.find(":");
+        if(col_pos<0){
+            std::cerr<<"AKV arguments provided in the incorrect format."<<std::endl;
+            exit(-1);
+        }
+        key = a.substr(0,col_pos);
+        val = a.substr(col_pos+1,a.size());
+        akvs.push_back(std::make_pair(key,val));
+        if_ss.close();
+    }
 
-    // TODO: add option to add novel genes/transcripts and annotate them using the CHESS format
-    //    however polycistronic will get assigned to theoverlapping genes which is not what we want....
-    //    perhaps we should just add them manually
+    // run
+    run(knowns,args.get_string(Opt::INPUT),args.get_string(Opt::OUTPUT),akvs);
 
     return 0;
 }

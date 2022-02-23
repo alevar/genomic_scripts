@@ -131,6 +131,77 @@ def read_setup(fname):
     assert len(res) >= 2, "setup file must have at least two entries"
     return res
 
+def merge_tids(grp,refname):
+    if len(grp)==1:
+        return pd.Series(list(grp.drop(refname,axis=1).iloc[0]))
+    ref_tid = list(set(grp[refname]))[0]
+    if ref_tid=="-":
+        assert False,"wrong value passed"
+
+    res = []
+    for c in grp.columns:
+        if c==refname:
+            continue
+        t = sorted(list(set([x for x in grp[c] if not x is '-'])))
+        if len(t)==0:
+            t="-"
+        res.append(",".join(t))
+    return pd.Series(res)
+
+def generate_map(pass_codes,id_type,args):
+    ref_cmp_gtfs = []
+
+    with open(args.setup,"r") as inFP:
+        for line in inFP:
+            name,fname = line.strip().split(",")
+            ref_cmp_gtfs.append(name)
+
+    tn_dfs = dict()
+
+    for tn in ref_cmp_gtfs: # reference
+        tn_df = pd.DataFrame()
+        for rn in ref_cmp_gtfs: # template
+            if rn==tn:
+                continue
+            tmap_fname = args.output+rn+"_"+tn+".tmap"
+            tmp = pd.read_csv(tmap_fname,sep="\t",usecols=[0,1,2,3,4])
+            tmp.columns = [rn+"_gid",rn+"_tid","code",tn+"_gid",tn+"_tid"]
+            tdf = tmp[[rn+"_"+id_type,"code",tn+"_"+id_type]].reset_index(drop=True)
+
+            # deal with the transcript assignments
+            tdf[rn+"_"+id_type]=np.where(tdf["code"].isin(pass_codes),tdf[rn+"_"+id_type],"-")
+            tdf.drop("code",axis=1,inplace=True)
+            # merge with the total df
+            if len(tn_df)==0:
+                tn_df = tdf.copy(deep=True)
+            else:
+                tn_df = tn_df.merge(tdf,on=tn+"_"+id_type,how="outer")
+
+        tn_dfs[tn]=tn_df
+
+    # now we need to merge them all together - question is how...
+    res_df = pd.DataFrame()
+    for k,v in tn_dfs.items():
+        if len(res_df)==0:
+            res_df = v.copy(deep=True)
+        else:
+            tmp = v[~(v[k+"_"+id_type].isin(res_df[k+"_"+id_type]))].reset_index(drop=True)
+            res_df = pd.concat([res_df,tmp]).reset_index(drop=True)
+
+    res_df.drop_duplicates(inplace=True)
+    # after "listing" everything else and removing uncertainties - we can explode
+    cols = res_df.columns
+    for c in cols:
+        tmp1 = res_df[~(res_df.duplicated(c,False))|(res_df[c]=="-")] # get non-duplicates
+        tmp2 = res_df[(res_df.duplicated(c,False))&~(res_df[c]=="-")] # get duplicates
+        tmp2.columns = cols
+        res_df = pd.concat([tmp1,tmp2],axis=0).reset_index(drop=True)
+
+    for c in res_df.columns:
+        res_df = res_df.explode(column=c)
+
+    res_df.drop_duplicates(inplace=True)
+    res_df.to_csv(args.output+id_type+".map.tsv",sep="\t",index=False)
 
 def gffcmp_multi(args):
     output_dir = "/".join(args.output.split("/")[:-1])+"/"
@@ -190,19 +261,21 @@ def gffcmp_multi(args):
         idx_loc = tuple([True if x in comb else False for x in index_names])
         mat_introns.loc[idx_loc] = len(res_introns)
         mat_exons.loc[idx_loc] = len(res_exons)
+
+    mat_exons.to_csv(fig_out+".exons.csv")
     plt.close('all')
     plt.clf()
     plot(mat_exons,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Exon Set Comparison Between Sources')
-    plt.savefig(fig_out + ".exons.eps")
-    mat_exons.to_csv(fig_out+".exons.csv")
+    plt.savefig(fig_out + ".exons.png")
 
     # compute intron overlaps and plot upset
+    mat_introns.to_csv(fig_out+".introns.csv")
     plt.close('all')
     plt.clf()
     plot(mat_introns,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Intron Set Comparison Between Sources')
-    plt.savefig(fig_out + ".introns.eps")
+    plt.savefig(fig_out + ".introns.png")
     mat_introns.to_csv(fig_out+".introns.csv")
 
     # cycle through annotations and load all transcripts in
@@ -249,14 +322,16 @@ def gffcmp_multi(args):
         idx_loc = tuple([True if x in comb else False for x in index_names])
         mat.loc[idx_loc] = len(res)
 
+    mat.to_csv(fig_out+".tx.csv")
     plt.close('all')
     plt.clf()
     plot(mat,show_percentages=True,show_counts=False,sort_by="degree")
     plt.suptitle('Transcript Set Comparison Between Sources')
-    plt.savefig(fig_out + ".tx.eps")
-    mat.to_csv(fig_out+".tx.csv")
+    plt.savefig(fig_out + ".tx.png")
 
-    
+    # now compile the mapping between matching transcripts and genes based on the TMAP files generated
+    generate_map(set(["="]),"tid",args)
+    generate_map(set(["=","c","k","j","m","n"]),"gid",args)
 
     if args.input is not None: # annotate
         input_label = args.input

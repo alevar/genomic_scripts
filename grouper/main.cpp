@@ -941,18 +941,19 @@ public:
             std::sort(this->tx_vec.begin(), this->tx_vec.end(),
                  [](const TX& t1, const TX& t2) -> bool{
                      if(t1.get_seqid()!=t2.get_seqid()){
-                         return t1.get_seqid()>t2.get_seqid();
+                         return t1.get_seqid()<t2.get_seqid();
                      }
                      else if(t1.get_start()!=t2.get_start()){
-                         return t1.get_start()>t2.get_start();
+                         return t1.get_start()<t2.get_start();
                      }
                      else if(t1.get_end()!=t2.get_end()){
-                         return t1.get_end()>t2.get_end();
+                         return t1.get_end()<t2.get_end();
                      }
                      else{ // doesn't matter - they definitely overlap
                          return false;
                      }
                  });
+
         }
     }
 
@@ -1422,10 +1423,10 @@ int run(const std::string& novel_gtf_fname,const std::string& out_fname){
     bid+=1;
     for(auto& t : transcriptome){
         if(!bundle.can_add(t)){
-            bundle.set_id(bid);
-            bid+=1;
             bundle.process(globals);
             bundle.clear();
+            bundle.set_id(bid);
+            bid+=1;
             bundle.add_tx(t);
         }
         else{

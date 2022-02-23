@@ -109,7 +109,7 @@ def fetch_annotations(args):
             else:
                 assert False,'Invalid URL in the setup file: '+item["url"]
         elif item["url"].startswith("ftp"):
-            req = urllib.request.Request(tem["url"])
+            req = urllib.request.Request(item["url"])
             with urllib.request.urlopen(req) as response:
                 fc = response.read()
                 with open(item["filename"],"wb") as outFP:
@@ -202,7 +202,7 @@ def fetch_annotations(args):
                 remove_gtf_seqids(item["filename"],wrong_seqids,False)
 
 
-        gffread_cmd = [args.gffread,"-T",
+        gffread_cmd = [args.gffread,"-T","-F",
                        "-m",tmp_map_fname,
                        "-o",output_dir+label+".gtf",
                        item["filename"]]

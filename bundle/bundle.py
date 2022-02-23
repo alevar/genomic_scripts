@@ -258,7 +258,7 @@ class Transcript():
         assert seqid == self.seqid, "Error (Coordinates): incorrect seqid"
         assert strand == self.strand, "Error (Coordinates): incorrect strand"
         assert start >= self.start, "Error (Coordinates): start<tx_start"
-        assert end <= self.end, "Error (Coordinates): end>tx_end"
+        assert end <= self.end, "Error (Coordinates): end>tx_end: "+str(self.tid)
         for pair in attrs.rstrip("\n").rstrip(";").split("\";"):
             k, v = pair.split(" \"")
             v = v.rstrip("\"")
@@ -480,6 +480,7 @@ class Bundle():
         for col in range(self.size - 1):
             for row in range(col + 1, self.size, 1):
                 dist = self.txs[col].get_distance(self.txs[row])
+                print(self.txs[col].tid,self.txs[row].tid,dist)
                 self.distmat[row][col] = dist
         return
 
@@ -562,12 +563,18 @@ def run(args):
                         bundle.add_tx(tx)
                     else:
                         bundle.dist_mat()
+                        print(repr(bundle.to_np()))
                         clus_tids = bundle.cluster()
                         bundle.write(clus_tids,outFP)
                         bundle = Bundle()
                         bundle.add_tx(tx)
                 if lineCols[2] == "exon":
                     tx.add_exon(lineCols[0], lineCols[6], lineCols[3], lineCols[4], lineCols[8])
+            # process last bundle
+            bundle.dist_mat()
+            print(repr(bundle.to_np()))
+            clus_tids = bundle.cluster()
+            bundle.write(clus_tids,outFP)
 
 
 def main(argv):

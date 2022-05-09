@@ -101,7 +101,7 @@ def fetch_annotations(args):
         if os.path.exists(item["url"]):
             shutil.copy(item["url"],item["filename"])
         elif item["url"].startswith("http"):
-            req = requests.get(item["url"],allow_redirects=False)
+            req = requests.get(item["url"],allow_redirects=True)
             if req.status_code == 200:
                 with open(item["filename"],"wb") as outFP:
                     outFP.write(req.content)

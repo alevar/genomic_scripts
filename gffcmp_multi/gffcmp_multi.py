@@ -7,6 +7,7 @@
 
 # this script performs pairwise comparison between multiple annotations and computes and displays several key statistics
 
+from multiprocessing import Pool
 from upsetplot import plot
 import pandas as pd
 import numpy as np
@@ -203,6 +204,11 @@ def generate_map(pass_codes,id_type,args):
     res_df.drop_duplicates(inplace=True)
     res_df.to_csv(args.output+id_type+".map.tsv",sep="\t",index=False)
 
+def run_gffcmp(gffcmp_cmd):
+    print(" ".join(gffcmp_cmd))
+    subprocess.call(gffcmp_cmd)
+
+
 def gffcmp_multi(args):
     output_dir = "/".join(args.output.split("/")[:-1])+"/"
     assert os.path.exists(output_dir),"output path is incorrect"
@@ -227,6 +233,9 @@ def gffcmp_multi(args):
         labels.append(label)
 
     gtf_pairs = list(itertools.permutations(gtf_list, 2))
+
+    # build commands
+    gffcmp_cmds = []
     for gp in gtf_pairs:
         gffcmp_cmd = [args.gffcompare, "--no-merge",
                       "-o", args.output + gp[0][0] + "_" + gp[1][0],
@@ -234,11 +243,19 @@ def gffcmp_multi(args):
         if args.debug:
             gffcmp_cmd.append("--debug")
         gffcmp_cmd.append(gp[1][1])
-        subprocess.call(gffcmp_cmd)
 
+        gffcmp_cmds.append(gffcmp_cmd)
+    
+
+    p = Pool(args.threads)
+    p.map(run_gffcmp, gffcmp_cmds)
+
+
+    for gp in gtf_pairs:
         fp_dir = "/".join(gp[1][1].split("/")[:-1]) + "/"
         fp_name_base = gp[1][1].split("/")[-1]
         out_base = args.output.split("/")[-1]
+
         assert os.path.exists(
             fp_dir + out_base + gp[0][0] + "_" + gp[1][0] + "." + fp_name_base + ".tmap"), "tmap/refmap do not exist"
         shutil.move(fp_dir + out_base + gp[0][0] + "_" + gp[1][0] + "." + fp_name_base + ".tmap",
@@ -427,6 +444,10 @@ def main(args):
     parser.add_argument("--debug",
                         action="store_true",
                         help="enable debug mode for gffcompare")
+    parser.add_argument("--threads",
+                        type=int,
+                        default=1,
+                        help="number of gffcompare instances to run concurrently")
     parser.set_defaults(func=gffcmp_multi)
     args = parser.parse_args()
     args.func(args)

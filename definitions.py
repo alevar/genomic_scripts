@@ -13,8 +13,39 @@ import os
 import random
 import pyBigWig
 import upsetplot
+import subprocess
 import numpy as np
 import pandas as pd
+
+gff3cols=["seqid","source","type","start","end","score","strand","phase","attributes"]
+
+def load_fasta_dict(fa_fname,rev=False):
+    res = dict()
+    with open(fa_fname,"r") as inFP:
+        cur_nm = None
+        
+        for line in inFP:
+            if line[0]==">":
+                cur_nm = line.strip()[1:].split()[0]
+                assert cur_nm not in res,"duplicate record name: "+nm
+                res[cur_nm] = ""
+            else:
+                assert cur_nm is not None,"empty record name"
+                res[cur_nm]+=line.strip()
+                
+    if rev:
+        im = dict()
+        for k, v in res.items():
+            im[v] = im.get(v, []) + [k]
+        
+        res = im
+    return res
+
+def get_gff3cols():
+    return gff3cols
+
+def test_defs(): # simple test to check whether the file has been loaded
+    print("test passed")
 
 def intersect(s1,s2):
     res = [0,-1,0]
@@ -111,6 +142,15 @@ def subset_gtf(in_gtf_fname,out_gtf_fname,tids):
                 tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
                 if tid in tids:
                     outFP.write(line)
+                    
+def load_gtf(gtf_fname):
+    assert os.path.exists(gtf_fname),"input file does not exist: "+gtf_fname
+    res = pd.read_csv(gtf_fname,sep="\t",names=gff3cols,comment="#")
+    return res
+
+def extract_gtf_attribute(gtf_df,k,column="attributes"):
+    assert column in set(gtf_df.columns), "please speify the correct column to extract attributes from"
+    return gtf_df[column].str.split(k+" \"",expand=True)[1].str.split("\"",expand=True)[0]
 
 def load_map(gtf_fname, qname, tname, pass_codes):
     assert os.path.exists(gtf_fname),"input file does not exist: "+gtf_fname
@@ -140,7 +180,13 @@ def load_map(gtf_fname, qname, tname, pass_codes):
     res.columns = [qname,"code",tname,"seqid","strand"]
     return res
 
-def get_attribute(gtf_fname,attr):
+def get_attribute(gtf_fname,attrs):
+    clean_attrs = []
+    if type(attrs)==list:
+        clean_attrs = attrs
+    else: # is string
+        clean_attrs = [attrs]
+        
     tid2name = dict()
     with open(gtf_fname,"r") as inFP:
         for line in inFP:
@@ -150,12 +196,17 @@ def get_attribute(gtf_fname,attr):
 
             if lcs[2]=="transcript":
                 tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
-                gn = "-"
-                if attr in lcs[8]:
-                    gn = lcs[8].split(attr+" \"", 1)[1].split("\"", 1)[0]
-                tid2name[tid]=gn
+                tid2name[tid]=[]
+                for a in clean_attrs:
+                    gn = "-"
+                    if a in lcs[8]:
+                        gn = lcs[8].split(a+" \"", 1)[1].split("\"", 1)[0]
+                    tid2name[tid].append(gn)
     res = pd.DataFrame.from_dict(tid2name,orient="index").reset_index()
-    res.columns = ["tid","val"]
+    tmp_cols = ["tid"]
+    for a in clean_attrs:
+        tmp_cols.append(a)
+    res.columns = tmp_cols
     return res
 
 def get_chains(gtf_fname,feature_type,coords,phase=False):
@@ -170,7 +221,7 @@ def get_chains(gtf_fname,feature_type,coords,phase=False):
                 tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
 
                 if(coords):
-                    res.setdefault(tid,[0,lcs[6],lcs[0]+":"+str(lcs[3])+"-"+str(lcs[4]),[]])
+                    res.setdefault(tid,[0,lcs[0],lcs[6],lcs[0]+":"+str(lcs[3])+"-"+str(lcs[4]),[]])
                 else:
                     res.setdefault(tid,[0,[]])
 
@@ -189,7 +240,7 @@ def get_chains(gtf_fname,feature_type,coords,phase=False):
         res[k].append(sorted(v[-1]))
     res = pd.DataFrame.from_dict(res,orient="index").reset_index()
     if(coords):
-        res.columns = ["tid","has_cds","strand","coords","chain"]
+        res.columns = ["tid","has_cds","seqid","strand","coords","chain"]
     else:
         res.columns = ["tid","has_cds","chain"]
     return res
@@ -432,8 +483,9 @@ def get_scores(scores_fname,ud,num_random=None):
                 continue
             for r in v2:
                 res[k].extend(bw.values(seqid,r[0],r[1]+1))
-        min_score = min(min_score,min(res[k]))
-        max_score = max(max_score,max(res[k]))
+        if len(res[k])>0:
+            min_score = min(min_score,min(res[k]))
+            max_score = max(max_score,max(res[k]))
         
     if num_random is not None:
         for k,v in res.items():
@@ -485,3 +537,206 @@ def mean_score(score_fname):
     for seqid,l in bw.chroms().items():
         means.append(bw.stats(seqid,0,l-1))
     return np.mean(means)
+
+# extract sashimi and gtf for a specified set of transcripts based on several annotations
+def extract_sashimi(sbin,cmp_gtf_fname,ref_gtf_fname,q_gtf_fname,out_base_fname,cmp_tid,qtid,title_str):
+    out_gtf_fname = out_base_fname+".gtf"
+    out_svg_fname = out_base_fname+".svg"
+    
+    with open(out_gtf_fname,"w+") as outFP:
+        # first write out MANE
+        with open(cmp_gtf_fname,"r") as inFP:
+            for line in inFP:
+                lcs = line.split("\t")
+                if not len(lcs) == 9:
+                    continue
+                tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
+                if tid == cmp_tid:
+                    outFP.write(line)
+        # next write out ORFanage
+        with open(q_gtf_fname,"r") as inFP:
+            for line in inFP:
+                lcs = line.split("\t")
+                if not len(lcs) == 9:
+                    continue
+                tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
+                if tid == qtid:
+                    lcs[8] = "transcript_id \"ORFanage:"+tid+"\""
+                    line = "\t".join(lcs)+"\n"
+                    outFP.write(line)
+        # lastly write out regular RefSeq
+        with open(ref_gtf_fname,"r") as inFP:
+            for line in inFP:
+                lcs = line.split("\t")
+                if not len(lcs) == 9:
+                    continue
+                tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
+                if tid == qtid:
+                    outFP.write(line)
+    
+    sashimi_cmd = [sbin,
+                   "--compare",cmp_tid,
+                   "--title",title_str,
+                   "--gtf",out_gtf_fname,
+                   "-o",out_svg_fname]
+    print(" ".join(sashimi_cmd))
+    subprocess.call(sashimi_cmd)
+    
+def get_poly_gids(gtf_fname):
+    df = get_chains(gtf_fname,"CDS",True)
+    df = df[df["has_cds"]==1].reset_index(drop=True)
+    df["seqid"]=df["coords"].str.split(":",n=1,expand=True)[0]
+    df["start"] = df["chain"].apply(lambda row: row[0][0])
+    df["end"] = df["chain"].apply(lambda row: row[-1][1])
+    # add gene ids
+    gid=pd.read_csv(gtf_fname,sep="\t",names=gff3cols,comment="#")
+    gid=gid[gid["type"]=="transcript"].reset_index(drop=True)
+    gid["tid"]=gid["attributes"].str.split("transcript_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    gid["gid"]=gid["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    gid = gid[["gid","tid"]]
+
+    df = df.merge(gid,on="tid",how="left",indicator=False)
+
+    df["start"] = df["start"].astype(int)
+    df["end"] = df["end"].astype(int)
+
+    df.sort_values(by=["seqid","strand","start","end"],ascending=True,inplace=True)
+
+    df = df.groupby(by=["seqid","strand","gid"]).agg({"start":min,"end":max}).reset_index()
+    df.sort_values(by=["seqid","strand","start","end"],ascending=True,inplace=True)
+    df["nc"]=df.seqid.shift(-1)
+    df["nt"]=df.strand.shift(-1)
+    df["ns"]=df.start.shift(-1)
+    df["nid"]=df.gid.shift(-1)
+    df.fillna(0,inplace=True)
+    df["od"] = np.where((df["seqid"]==df["nc"]) & 
+                               (df["strand"]==df["nt"]) & 
+                               (df["end"]>df["ns"]),1,0)
+    pids = set(df[df["od"]==1]["gid"]).union(set(df[df["od"]==1]["nid"]))
+    
+    return pids
+
+def clean(in_gtf_fname,out_gtf_fname,gffread_bin,fa_fname,remove_single_exon,keep_seqids = None):
+    # deal with stops
+    tmp1_fname = out_gtf_fname+".tmp1.gtf"
+    cmd = [gffread_bin,
+           "-g",fa_fname,
+           "--adj-stop","-V","-T","-F","-J",
+           "-o",tmp1_fname,
+           in_gtf_fname]
+
+    print(" ".join(cmd))
+    subprocess.call(cmd)
+    
+    seids = set()
+    if remove_single_exon:
+        df=pd.read_csv(tmp1_fname,sep="\t",names=gff3cols,comment="#")
+        df=df[df["type"]=="exon"].reset_index(drop=True)
+        df["tid"]=df["attributes"].str.split("transcript_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+        df["gid"]=df["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+        gdf = df[["tid","seqid"]].groupby(by="tid").count().reset_index()
+        gdf.columns = ["tid","num_exons"]
+        seids = set(gdf[gdf["num_exons"]==1]["tid"])
+        seids = set(df[df["tid"].isin(seids)]["gid"])
+        print("number of single exon genes discarded: "+str(len(seids)))
+        
+        
+    # deal with poly
+    pids = get_poly_gids(tmp1_fname)
+    
+    # deal with exceptions
+    df=pd.read_csv(tmp1_fname,sep="\t",names=gff3cols,comment="#")
+    df=df[df["type"]=="transcript"].reset_index(drop=True)
+    df["tid"]=df["attributes"].str.split("transcript_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    df["gid"]=df["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+
+    # retain chromosomes
+    cids = set()
+    if not keep_seqids is None:
+        cids = df[~(df["seqid"].isin(keep_seqids))]["gid"]
+        print("number of transcripts not on selected seqids: "+str(len(cids)))
+    
+    try:
+        df["attr"]=df["attributes"].str.split("exception \"",expand=True)[1].str.split("\"",expand=True)[0]
+    except:
+        df["attr"]=None
+    df["seleno"] = df["attributes"].str.lower().str.contains("selen")
+
+    sids = set(df[df["seleno"]]["gid"])
+    print("number of seleno: "+str(len(sids)))
+
+    print("exceptions: "+", ".join(list(set(df[~(df["attr"].isna())]["attr"].tolist()))))
+    eids = set(df[~(df["attr"].isna())]["gid"])
+    print("number of exceptions: "+str(len(eids)))
+    
+    dirty_gids = seids.union(pids).union(sids).union(eids).union(cids)
+    print("number of genes to discard: "+str(len(dirty_gids)))
+    
+    with open(out_gtf_fname,"w+") as outFP:
+        with open(tmp1_fname,"r") as inFP:
+            for line in inFP:
+                lcs = line.split("\t")
+                gid = lcs[8].split("gene_id \"",1)[1].split("\"",1)[0]
+                if not gid in dirty_gids:
+                    outFP.write(line)
+                    
+def get_coding_gids(gtf_fname):
+    df=pd.read_csv(gtf_fname,sep="\t",names=gff3cols,comment="#")
+    df = df[df["type"]=="CDS"].reset_index(drop=True)
+    df["gid"] = df["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    return set(df["gid"])
+
+def subset_gtf_by_seqid(in_gtf_fname,out_gtf_fname,seqids):
+    with open(out_gtf_fname,"w+") as outFP:
+        with open(in_gtf_fname,"r") as inFP:
+            for line in inFP:
+                lcs = line.rstrip().split("\t")
+                if not seqids == False and lcs[0] not in seqids:
+                    continue
+                    
+                outFP.write(line)
+    
+
+def subset_gtf(in_gtf_fname,out_gtf_fname,gids,tids):
+    writing_tid = ""
+    with open(out_gtf_fname,"w+") as outFP:
+        with open(in_gtf_fname,"r") as inFP:
+            for line in inFP:
+                lcs = line.rstrip().split("\t")
+                tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
+                if lcs[2]=="transcript":
+                    gid = lcs[8].split("gene_id \"", 1)[1].split("\"", 1)[0]
+                    if not gids == False and gid in gids:
+                        outFP.write(line)
+                        writing_tid = tid
+                        continue
+                
+                if not tids == False and tid in tids:
+                    outFP.write(line)
+                    continue
+                    
+                # handle non transcript ffeatures without gene_id for whihc a transcript was found based on gene-id
+                if writing_tid == tid:
+                    outFP.write(line)
+                    continue
+                
+                
+def get_coding_stats(gtf_fname):
+    # average number of isoforms per gene
+
+    cgids = get_coding_gids(gtf_fname)
+    t2g = get_attribute(gtf_fname,"gene_id")
+    t2g.columns = ["tid","gid"]
+    chains = get_chains(gtf_fname,"CDS",False)
+    chains = chains[chains["has_cds"]==1].reset_index(drop=True)
+    chains["chain_str"] = chains.apply(lambda row: ",".join(str(x[0])+"-"+str(x[1]) for x in row["chain"]),axis=1)
+
+    t2g_c = t2g[t2g["gid"].isin(cgids)].reset_index(drop=True)
+    t2g_c_g = t2g_c.groupby(by="gid").count().reset_index()
+    print("mean number of transcripts per coding gene: "+str(t2g_c_g["tid"].mean()))
+
+    chains = chains.merge(t2g_c,on="tid",how="inner")
+    chains = chains[["chain_str","gid"]]
+    chains.drop_duplicates(inplace=True)
+    chains_g = chains.groupby(by="gid").count().reset_index()
+    print("mean number of unique proteins per coding gene: "+str(chains_g["chain_str"].mean()))

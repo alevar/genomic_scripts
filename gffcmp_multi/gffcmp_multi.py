@@ -306,6 +306,8 @@ def gffcmp_multi(args):
         with open(gtf_fname, "r") as inFP:
             for line in inFP:
                 cols = line.strip().split("\t")
+                if cols[2] != "transcript":
+                    continue
                 attrs = cols[8]
                 tmp = attrs.split("transcript_id \"", 1)
                 if len(tmp) == 1:

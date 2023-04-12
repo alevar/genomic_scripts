@@ -180,7 +180,7 @@ def load_map(gtf_fname, qname, tname, pass_codes):
     res.columns = [qname,"code",tname,"seqid","strand"]
     return res
 
-def get_attribute(gtf_fname,attrs):
+def get_attribute(gtf_fname,attrs,cols=None,feature="transcript",gff=False):
     clean_attrs = []
     if type(attrs)==list:
         clean_attrs = attrs
@@ -194,16 +194,30 @@ def get_attribute(gtf_fname,attrs):
             if not len(lcs) == 9:
                 continue
 
-            if lcs[2]=="transcript":
-                tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
+            if lcs[2]==feature:
+                tid = ""
+                if not gff:
+                    tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
+                else:
+                    tid = lcs[8].split("ID=",1)[1].split(";",1)[0]
+                
                 tid2name[tid]=[]
+                if cols is not None:
+                    for c in cols:
+                        tid2name[tid].append(lcs[c])
                 for a in clean_attrs:
                     gn = "-"
                     if a in lcs[8]:
-                        gn = lcs[8].split(a+" \"", 1)[1].split("\"", 1)[0]
+                        if not gff:
+                            gn = lcs[8].split(a+" \"", 1)[1].split("\"", 1)[0]
+                        else:
+                            gn = lcs[8].split(a+"=",1)[1].split(";",1)[0]
                     tid2name[tid].append(gn)
     res = pd.DataFrame.from_dict(tid2name,orient="index").reset_index()
     tmp_cols = ["tid"]
+    if cols is not None:
+        for c in cols:
+            tmp_cols.append(a)
     for a in clean_attrs:
         tmp_cols.append(a)
     res.columns = tmp_cols
@@ -740,3 +754,206 @@ def get_coding_stats(gtf_fname):
     chains.drop_duplicates(inplace=True)
     chains_g = chains.groupby(by="gid").count().reset_index()
     print("mean number of unique proteins per coding gene: "+str(chains_g["chain_str"].mean()))
+    
+# extracts num_pos coordinates from the chain
+# if reverse - will extract from the end
+def get_coords(chain,num_pos,reverse):
+    res_coords = []
+    
+    tmp_chain = chain
+    inc = 1
+    if reverse:
+        inc = -1
+        tmp_chain = [[x[1],x[0]] for x in tmp_chain[::-1]]
+    
+    for c in tmp_chain:
+        for i in range(c[0],c[1]+1,inc):
+            res_coords.append(i)
+            if len(res_coords)>=num_pos:
+                return res_coords
+            
+            
+def contained_intervals(is1,is2,inverse=False): # if inverse - return intervals of is2 hich contain intervals in is1
+    res = []
+    for i1 in is1:
+        for i2 in is2:
+            if i1[0] >= i2[0] and i1[1] <= i2[1]:
+                if inverse:
+                    res.append(i2)
+                else:
+                    res.append(i1)
+                break
+    return res
+
+def attr_str2dict(attrs):
+    return dict(item.strip().split(' ') for item in attrs.strip().split(';') if item)
+
+def get_intervals(gtf_fname,feature = "exon", invert=False):
+    res_intervals = dict() # seqids and strand as keys, lists of introns as values1
+    
+    intervals = {}
+    with open(gtf_fname, 'r') as inFP:
+        for line in inFP:
+            if line[0] == "#":
+                continue
+            lcs = line.strip().split('\t')
+            if lcs[2] == feature:
+                tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
+                if tid not in intervals:
+                    intervals[tid] = {"seqname": lcs[0],
+                                  "strand": lcs[6],
+                                  "intervals": []}
+                intervals[tid]["intervals"].append((int(lcs[3]), int(lcs[4])))
+
+    for tid, idata in intervals.items():
+        if invert: # get introns
+            for ii in range(1,len(idata["intervals"][1:]),1):
+                key = (idata["seqname"],idata["strand"])
+                res_intervals.setdefault(key,dict())
+                rit = (idata["intervals"][ii-1][1]+1,idata["intervals"][ii][0]-1)
+                res_intervals[key].setdefault(rit,set())
+                res_intervals[key][rit].add(tid)
+        else:
+            for ii in range(len(idata["intervals"])):
+                key = (idata["seqname"],idata["strand"])
+                res_intervals.setdefault(key,dict())
+                rit = (idata["intervals"][ii][0],idata["intervals"][ii][1])
+                res_intervals[key].setdefault(rit,set())
+                res_intervals[key][rit].add(tid)
+
+    return res_intervals
+
+def quant_AS(qry_gtf_fname: str, tmpl_gtf_fname: str) -> pd.DataFrame:
+    # load tmpl orfs and extract start coordinates and check for match
+    tmpl_orfs = get_chains(tmpl_gtf_fname.strip(".gtf")+".adjstop.gtf","CDS",True)
+    tmpl_orfs["frv"] = tmpl_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=False),axis=1)
+    tmpl_orfs["rev"] = tmpl_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=True),axis=1)
+    tmpl_orfs["start"] = np.where(tmpl_orfs["strand"]=="+",tmpl_orfs["frv"],tmpl_orfs["rev"])
+    tmpl_orfs["end"] = np.where(tmpl_orfs["strand"]=="+",tmpl_orfs["rev"],tmpl_orfs["frv"])
+    tmpl_orfs.drop(["frv","rev"],axis=1,inplace=True)
+    
+    # load tmpl orfs and extract start coordinates and check for match
+    qry_orfs = get_chains(qry_gtf_fname.strip(".gtf")+".adjstop.gtf","CDS",True)
+    qry_orfs = qry_orfs[qry_orfs["has_cds"]==1].reset_index(drop=True)
+    qry_orfs["frv"] = qry_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=False),axis=1)
+    qry_orfs["rev"] = qry_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=True),axis=1)
+    qry_orfs["start"] = np.where(qry_orfs["strand"]=="+",qry_orfs["frv"],qry_orfs["rev"])
+    qry_orfs["end"] = np.where(qry_orfs["strand"]=="+",qry_orfs["rev"],qry_orfs["frv"])
+    qry_orfs.drop(["frv","rev"],axis=1,inplace=True)
+    qry_orfs = qry_orfs[~(qry_orfs["start"].isna())].reset_index(drop=True)
+    qry_orfs = qry_orfs[~(qry_orfs["end"].isna())].reset_index(drop=True)
+    
+    tmpl_orf_starts = set([",".join([str(x[0]),str(x[1]),str(x[2])]) for x in tmpl_orfs["start"].to_list()])
+    tmpl_orf_ends = set([",".join([str(x[0]),str(x[1]),str(x[2])]) for x in tmpl_orfs["end"].to_list()])
+    qry_orf_starts = set([",".join([str(x[0]),str(x[1]),str(x[2])]) for x in qry_orfs["start"].to_list()])
+    qry_orf_ends = set([",".join([str(x[0]),str(x[1]),str(x[2])]) for x in qry_orfs["end"].to_list()])
+    
+    num_alt_starts = qry_orf_starts - tmpl_orf_starts
+    num_alt_ends = qry_orf_ends - tmpl_orf_ends
+    
+    # next we need a script to extract exon skipping events
+    # exon skipping: tmpl exon entirely contained within an intron of query
+    qry_introns = get_intervals(qry_gtf_fname,feature="exon",invert=True)
+    tmpl_exons = get_intervals(tmpl_gtf_fname,feature="exon",invert=False)
+    
+    # total number of tmpl exons
+    tmpl_exon_count = 0
+    for k,v in tmpl_exons.items():
+        tmpl_exon_count+=len(v)
+    
+    skipped_tmpl_exon_count = 0
+    tmpl_exon_skipping_event_tids = set() # chess transcripts hich have one or more exon skipping events
+    
+    for (seqid,strand),tmpl_intervals in tmpl_exons.items():
+        res_contained = contained_intervals(list(tmpl_intervals),list(qry_introns[(seqid,strand)]),False)
+        res_contained_in = contained_intervals(list(tmpl_intervals),list(qry_introns[(seqid,strand)]),True)
+        for r in res_contained:
+            skipped_tmpl_exon_count+=1
+        for r in res_contained_in:
+            tmpl_exon_skipping_event_tids.update(qry_introns[(seqid,strand)][r])
+            
+    
+    # subset of the same but using only tmpl CDS pieces and see how many of those are gone
+    
+    # cds skipping: tmpl cds entirely contained within an intron of query
+    qry_introns = get_intervals(qry_gtf_fname,feature="exon",invert=True)
+    tmpl_cds = get_intervals(tmpl_gtf_fname,feature="CDS",invert=False)
+    
+    # total number of tmpl cds
+    tmpl_cds_count = 0
+    for k,v in tmpl_cds.items():
+        tmpl_cds_count+=len(v)
+    
+    skipped_tmpl_cds_count = 0
+    tmpl_cds_skipping_event_tids = set() # query transcripts hich have one or more cds skipping events
+    
+    for (seqid,strand),tmpl_intervals in tmpl_cds.items():
+        res_contained = contained_intervals(list(tmpl_intervals),list(qry_introns[(seqid,strand)]),False)
+        res_contained_in = contained_intervals(list(tmpl_intervals),list(qry_introns[(seqid,strand)]),True)
+        for r in res_contained:
+            skipped_tmpl_cds_count+=1
+        for r in res_contained_in:
+            tmpl_cds_skipping_event_tids.update(qry_introns[(seqid,strand)][r])
+    
+    # intron retention - how many of the tmpl introns are entirely contained within query exons
+    
+    qry_exons = get_intervals(qry_gtf_fname,feature="exon",invert=False)
+    tmpl_introns = get_intervals(tmpl_gtf_fname,feature="exon",invert=True)
+    
+    # total number of tmpl introns
+    tmpl_intron_count = 0
+    for k,v in tmpl_introns.items():
+        tmpl_intron_count+=len(v)
+    
+    retained_tmpl_intron_count = 0
+    tmpl_intron_retention_event_tids = set()
+    
+    for (seqid,strand),tmpl_intervals in tmpl_introns.items():
+        res_contained = contained_intervals(list(tmpl_intervals),list(qry_exons[(seqid,strand)]),False)
+        res_contained_in = contained_intervals(list(tmpl_intervals),list(qry_exons[(seqid,strand)]),True)
+        for r in res_contained:
+            retained_tmpl_intron_count+=1
+        for r in res_contained_in:
+            tmpl_intron_retention_event_tids.update(qry_exons[(seqid,strand)][r])
+    
+    # intron retention - using cds this time
+    
+    qry_exons = get_intervals(qry_gtf_fname,feature="exon",invert=False)
+    tmpl_introns = get_intervals(tmpl_gtf_fname,feature="CDS",invert=True)
+    
+    # total number of tmpl introns
+    tmpl_cds_intron_count = 0
+    for k,v in tmpl_introns.items():
+        tmpl_cds_intron_count+=len(v)
+    
+    retained_tmpl_cds_intron_count = 0
+    tmpl_cds_intron_retention_event_tids = set()
+    
+    for (seqid,strand),tmpl_intervals in tmpl_introns.items():
+        res_contained = contained_intervals(list(tmpl_intervals),list(qry_exons[(seqid,strand)]),False)
+        res_contained_in = contained_intervals(list(tmpl_intervals),list(qry_exons[(seqid,strand)]),True)
+        for r in res_contained:
+            retained_tmpl_cds_intron_count+=1
+        for r in res_contained_in:
+            # print(r)
+            # print(qry_introns[(seqid,strand)][r])
+            tmpl_cds_intron_retention_event_tids.update(qry_exons[(seqid,strand)][r])
+    
+    # report stop/start, intron retention, exon-skipping
+    df = pd.DataFrame([],columns=["count","type"])
+    df.loc[len(df.index)]=[len(num_alt_starts),"Alternative Starts"]
+    df.loc[len(df.index)]=[len(num_alt_ends),"Alternative Ends"]
+    df.loc[len(df.index)]=[tmpl_exon_count,"Total number of Exons in Template"]
+    df.loc[len(df.index)]=[skipped_tmpl_exon_count,"Template Exons Skipped"]
+    df.loc[len(df.index)]=[len(tmpl_exon_skipping_event_tids),"Query Transcripts Skipping tmpl Exons"]
+    df.loc[len(df.index)]=[tmpl_cds_count,"Total number of Coding Exons in Template"]
+    df.loc[len(df.index)]=[skipped_tmpl_cds_count,"Template Coding Exons Skipped"]
+    df.loc[len(df.index)]=[len(tmpl_cds_skipping_event_tids),"Query Transcripts Skipping tmpl Coding Exons"]
+    df.loc[len(df.index)]=[tmpl_intron_count,"Total number of introns in Template"]
+    df.loc[len(df.index)]=[retained_tmpl_intron_count,"Template Introns Retained"]
+    df.loc[len(df.index)]=[len(tmpl_intron_retention_event_tids)," Query Transcripts Retaining tmpl Introns"]
+    df.loc[len(df.index)]=[tmpl_cds_intron_count,"Total number of Coding Introns in Template"]
+    df.loc[len(df.index)]=[retained_tmpl_cds_intron_count,"Template Coding Introns Retained"]
+    df.loc[len(df.index)]=[len(tmpl_cds_intron_retention_event_tids),"Query Transcripts Retaining tmpl Coding Introns"]
+    
+    return df

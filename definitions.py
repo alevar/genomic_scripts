@@ -825,7 +825,7 @@ def get_intervals(gtf_fname,feature = "exon", invert=False):
 
 def quant_AS(qry_gtf_fname: str, tmpl_gtf_fname: str) -> pd.DataFrame:
     # load tmpl orfs and extract start coordinates and check for match
-    tmpl_orfs = get_chains(tmpl_gtf_fname.strip(".gtf")+".adjstop.gtf","CDS",True)
+    tmpl_orfs = get_chains(tmpl_gtf_fname,"CDS",True)
     tmpl_orfs["frv"] = tmpl_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=False),axis=1)
     tmpl_orfs["rev"] = tmpl_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=True),axis=1)
     tmpl_orfs["start"] = np.where(tmpl_orfs["strand"]=="+",tmpl_orfs["frv"],tmpl_orfs["rev"])
@@ -833,7 +833,7 @@ def quant_AS(qry_gtf_fname: str, tmpl_gtf_fname: str) -> pd.DataFrame:
     tmpl_orfs.drop(["frv","rev"],axis=1,inplace=True)
     
     # load tmpl orfs and extract start coordinates and check for match
-    qry_orfs = get_chains(qry_gtf_fname.strip(".gtf")+".adjstop.gtf","CDS",True)
+    qry_orfs = get_chains(qry_gtf_fname,"CDS",True)
     qry_orfs = qry_orfs[qry_orfs["has_cds"]==1].reset_index(drop=True)
     qry_orfs["frv"] = qry_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=False),axis=1)
     qry_orfs["rev"] = qry_orfs.apply(lambda row: get_coords(row["chain"],3,reverse=True),axis=1)
@@ -956,4 +956,28 @@ def quant_AS(qry_gtf_fname: str, tmpl_gtf_fname: str) -> pd.DataFrame:
     df.loc[len(df.index)]=[retained_tmpl_cds_intron_count,"Template Coding Introns Retained"]
     df.loc[len(df.index)]=[len(tmpl_cds_intron_retention_event_tids),"Query Transcripts Retaining tmpl Coding Introns"]
     
+    return df
+
+
+# converts gtf to bed format. for every gene id get the minimum start and maximum end as a single bed interval
+def gtf_to_gene_bed(gtf_fname: str,bed_fname):
+    df = load_gtf(gtf_fname)
+    df = df[df["type"]=="transcript"].reset_index()
+    df["gid"] = df["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    df = df[["gid","seqid","start","end"]].groupby(by="gid").agg({"seqid":"min","start":"min","end":"max"}).reset_index()
+    df["start"] = df["start"]-1
+    df["end"] = df["end"]+1
+    df.sort_values(by=["seqid","start","end"],ascending=True)
+    df[["seqid","start","end"]].to_csv(bed_fname,sep="\t",index=False,header=False)
+    
+    
+# counts the number of transcripts per gene
+def count_gene_transcripts(gtf_fname: str):
+    df = load_gtf(gtf_fname)
+    df = df[df["type"]=="transcript"].reset_index()
+    df["gid"] = df["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    df["tid"] = df["attributes"].str.split("transcript_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    
+    df = df[["gid","tid"]].groupby(by="gid").count().reset_index()
+    df.columns = ["gid","num_txs"]
     return df

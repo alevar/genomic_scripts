@@ -19,7 +19,7 @@ import pandas as pd
 
 gff3cols=["seqid","source","type","start","end","score","strand","phase","attributes"]
 
-def load_fasta_dict(fa_fname,rev=False):
+def load_fasta_dict(fa_fname,rev=False,upper=False):
     res = dict()
     with open(fa_fname,"r") as inFP:
         cur_nm = None
@@ -31,7 +31,7 @@ def load_fasta_dict(fa_fname,rev=False):
                 res[cur_nm] = ""
             else:
                 assert cur_nm is not None,"empty record name"
-                res[cur_nm]+=line.strip()
+                res[cur_nm]+=line.strip().upper()
                 
     if rev:
         im = dict()
@@ -244,7 +244,7 @@ def get_chains(gtf_fname,feature_type,coords,phase=False):
                 
             tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
 
-            res[tid][-1].append([int(lcs[3]),int(lcs[4])])
+            res[tid][-1].append((int(lcs[3]),int(lcs[4])))
             if phase:
                 res[tid][-1][-1].append(lcs[7])
             res[tid][0]=1
@@ -553,7 +553,7 @@ def mean_score(score_fname):
     return np.mean(means)
 
 # extract sashimi and gtf for a specified set of transcripts based on several annotations
-def extract_sashimi(sbin,cmp_gtf_fname,ref_gtf_fname,q_gtf_fname,out_base_fname,cmp_tid,qtid,title_str):
+def extract_sashimi(sbin,cmp_gtf_fname,ref_gtf_fname,q_gtf_fname,out_base_fname,cmp_tid,qtids,title_str):
     out_gtf_fname = out_base_fname+".gtf"
     out_svg_fname = out_base_fname+".svg"
     
@@ -574,7 +574,7 @@ def extract_sashimi(sbin,cmp_gtf_fname,ref_gtf_fname,q_gtf_fname,out_base_fname,
                 if not len(lcs) == 9:
                     continue
                 tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
-                if tid == qtid:
+                if tid in qtids or tid == qtids:
                     lcs[8] = "transcript_id \"ORFanage:"+tid+"\""
                     line = "\t".join(lcs)+"\n"
                     outFP.write(line)
@@ -585,7 +585,7 @@ def extract_sashimi(sbin,cmp_gtf_fname,ref_gtf_fname,q_gtf_fname,out_base_fname,
                 if not len(lcs) == 9:
                     continue
                 tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
-                if tid == qtid:
+                if tid in qtids or tid == qtids:
                     outFP.write(line)
     
     sashimi_cmd = [sbin,
@@ -960,13 +960,13 @@ def quant_AS(qry_gtf_fname: str, tmpl_gtf_fname: str) -> pd.DataFrame:
 
 
 # converts gtf to bed format. for every gene id get the minimum start and maximum end as a single bed interval
-def gtf_to_gene_bed(gtf_fname: str,bed_fname):
+def gtf_to_gene_bed(gtf_fname: str,bed_fname: str, offset:int=1):
     df = load_gtf(gtf_fname)
     df = df[df["type"]=="transcript"].reset_index()
     df["gid"] = df["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
     df = df[["gid","seqid","start","end"]].groupby(by="gid").agg({"seqid":"min","start":"min","end":"max"}).reset_index()
-    df["start"] = df["start"]-1
-    df["end"] = df["end"]+1
+    df["start"] = np.where((df["start"]-offset)<1,1,df["start"]-offset)
+    df["end"] = df["end"]+offset
     df.sort_values(by=["seqid","start","end"],ascending=True)
     df[["seqid","start","end"]].to_csv(bed_fname,sep="\t",index=False,header=False)
     
@@ -981,3 +981,85 @@ def count_gene_transcripts(gtf_fname: str):
     df = df[["gid","tid"]].groupby(by="gid").count().reset_index()
     df.columns = ["gid","num_txs"]
     return df
+
+
+# find longest ORF in each transcript
+# what do we do if there is multiple ORFs of the same length? - just count for now. could also just skip those genes alltogether
+def find_longest_orfs(seq):
+    longest = []
+    max_len = 0
+
+    matches = re.finditer(r'(?=(ATG(?:(?!TAA|TAG|TGA)...)*(?:TAA|TAG|TGA)))', seq)
+    for match in matches:
+        result = match.group(1)
+        coords = [match.start(),match.start()+len(result)-1]
+
+        if max_len<len(result):
+            longest = [coords]
+            max_len = len(result)
+            continue
+        if max_len==len(result):
+            longest.append(coords)
+            continue
+
+    return longest
+
+def trans2genome(chain, strand, zero_pos):
+    chain_pos = -1
+    left_to_stop = zero_pos
+    found_pos = False
+    if strand=='+':
+        for i in range(len(chain)):
+            clen = slen(chain[i])
+            if left_to_stop<clen: # found the segment with the stop codon
+                chain_pos = chain[i][0]+left_to_stop
+                found_pos = True
+                break
+            
+            left_to_stop-=clen
+        
+        if not found_pos: # return the last position
+            chain_pos = chain[-1][1]
+        
+    else:
+        for i in range(len(chain)-1,-1,-1):
+            clen = slen(chain[i])
+            if left_to_stop<clen: # found the cds segment with the stop codon
+                chain_pos = chain[i][1]-left_to_stop
+                found_pos = True
+                break
+            
+            left_to_stop-=clen
+            
+        if not found_pos: # return the last position
+            chain_pos = chain[0][0]
+        
+    assert chain_pos>=0,"unexpected chain_pos<0"
+    return chain_pos
+
+
+def cut_chain(chain, start, end):
+    res = []
+    for cs,ce in chain:
+        new_cs = cs
+        new_ce = ce
+        if new_cs<=start and new_ce>=start:
+            new_cs = start
+        if new_ce>=end:
+            new_ce = end
+            res.append([new_cs,new_ce])
+            break
+        if new_ce<start or new_cs>end:
+            continue
+        res.append([new_cs,new_ce])
+    return res
+
+
+# extract number of exons for each transcript in gtf
+def num_exons(gtf_fname):
+    df=pd.read_csv(gtf_fname,sep="\t",names=gff3cols,comment="#")
+    df=df[df["type"]=="exon"].reset_index(drop=True)
+    df["tid"]=df["attributes"].str.split("transcript_id \"",expand=True)[1].str.split("\"",expand=True)[0]
+    gdf = df[["tid","seqid"]].groupby(by="tid").count().reset_index()
+    gdf.columns = ["tid","num_exons"]
+    return gdf

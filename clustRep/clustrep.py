@@ -9,6 +9,10 @@ import shutil
 import argparse
 import subprocess
 
+# compute percent non-ACGTacgt characters in a sequence    
+def count_ambiguity(seq):
+    return sum([1 for x in seq if not x in "ACGTacgt"])
+
 def run(args):
     if not shutil.which("mmseqs") is not None:
         print("mmseqs not found. Please download and install it prior to running this script.\n Additional information can be found at https:://github.com/soedinglab/MMseqs2")
@@ -16,6 +20,7 @@ def run(args):
 
     # iterate over the input file and identify suitable sequences
     tmpdir = args.tmp if args.tmp[-1]=="/" else args.tmp+"/"
+    tmpdir = os.path.abspath(tmpdir)+"/"
     if not os.path.exists(tmpdir):
         os.mkdir(tmpdir)
 
@@ -28,23 +33,34 @@ def run(args):
     # filter sequences before clustering
     filtered_fasta_fname = tmpdir+"filtered.fasta"
 
-    nts = set(args.nts) if not args.nts is None else None # transform into set to speedup the search
+    nts = set(args.nts) if not args.nts is None else None # transform into set to speedup the search        
 
     with open(filtered_fasta_fname,"w+") as outFP:
         cur_seqid = ""
         cur_seq = ""
-        with open(args.input,"r") as inFP:
+        with open(args.i,"r") as inFP:
             for line in inFP:
                 if line[0]==">":
-                    if len(cur_seq)>0:
-                        if (len(cur_seq)>=args.minlen) and \
-                           (len(cur_seq)<=args.maxlen) and \
-                           (nts is None or all([x in nts for x in cur_seq])):
-                            outFP.write(cur_seqid+"\n")
-                            outFP.write(cur_seq+"\n")
+                    if len(cur_seq)>0 &\
+                       (len(cur_seq)>=args.minlen) and \
+                       (len(cur_seq)<=args.maxlen) and \
+                       (count_ambiguity(cur_seq)/len(cur_seq)<=args.perc_ambiguity) and \
+                       (nts is None or all([x in nts for x in cur_seq])):
+                        outFP.write(">"+cur_seqid+"\n")
+                        outFP.write(cur_seq+"\n")
 
                     cur_seqid = line[1:].strip()
                     cur_seq = ""
+                else:
+                    cur_seq+=line.strip()
+
+        if len(cur_seq)>0 &\
+            (len(cur_seq)>=args.minlen) and \
+            (len(cur_seq)<=args.maxlen) and \
+            (count_ambiguity(cur_seq)/len(cur_seq)<=args.perc_ambiguity) and \
+            (nts is None or all([x in nts for x in cur_seq])):
+            outFP.write(">"+cur_seqid+"\n")
+            outFP.write(cur_seq+"\n")
 
     # if metafile is provided - we will process sequences by the group column
     # otherwise - we will process all sequences together
@@ -52,49 +68,53 @@ def run(args):
     if not os.path.exists(groups_dir):
         os.mkdir(groups_dir)
 
-    groups = []
+    groups = dict()
     if not args.meta is None:
         with open(args.meta,"r") as inFP:
             for line in inFP:
-                lcs = line.strip().split(",")
+                lcs = line.strip().split("\t")
                 assert len(lcs)==2,"meta file must have 2 columns"
-                groups.append(lcs[1])
+                groups[lcs[0]] = lcs[1]
 
     # iterate over the filtered set and divide sequences into groups
-    groups_files = []
+    group_files = dict()
     if len(groups)==0:
-        groups_files.append(filtered_fasta_fname)
+        group_files[0] = filtered_fasta_fname
     else:
+        cur_seqid = ""
         with open(filtered_fasta_fname,"r") as inFP:
             for line in inFP:
-                seqid = line.strip()
-                group = groups[seqid]
-                with open(groups_dir+group+".fasta","a+") as outFP:
-                    outFP.write(">"+seqid+"\n")
-                    outFP.write(inFP.readline())
+                if line[0]==">":
+                    cur_seqid = line[1:].strip()
 
-                groups_files.append(groups_dir+group+".fasta")
+                if cur_seqid in groups:
+                    group = groups[cur_seqid]
+                    with open(groups_dir+group+".fasta","a+") as outFP:
+                        outFP.write(line)
+
+                    group_files[group] = groups_dir+group+".fasta"
     
-    for code in country_codes:
-        print(code)
+    for grp,grp_file in group_files.items():
+        print(grp)
         linclust_cmd = ["mmseqs","easy-linclust",
-                        regions_dir+code+"/region.fasta",
-                        regions_dir+code+"/clu_"+str(sens),
-                        regions_dir+code+"/tmp_"+str(sens),
+                        grp_file,
+                        groups_dir+str(grp)+".clu",
+                        groups_dir+str(grp)+".clu.tmp",
                         "--cov-mode","1",
-                        "-c","0."+str(sens),
-                        "--min-seq-id","0."+str(sens),
-                        "--kmer-per-seq-scale","0.3",
+                        "-c",str(args.c),
+                        "--min-seq-id",str(args.c),
+                        "--kmer-per-seq-scale",str(args.kmer_per_seq_scale),
                         "--threads",str(args.threads)]
+        if args.debug:
+            print(" ".join(linclust_cmd))
         subprocess.call(linclust_cmd)
 
     # now we need to combine all representative sequences together
     total_reps = 0
-
-    with open(regions_dir+"all_rep.fasta","w+") as outFP:
-        for code in country_codes:
-            with open(regions_dir+code+"/clu_"+str(sens)+"_rep_seq.fasta","r") as inFP:
-                for line in inFP.readlines():
+    with open(args.o,"w+") as outFP:
+        for grp,file in group_files.items():
+            with open(groups_dir+str(grp)+".clu_rep_seq.fasta","r") as inFP:
+                for line in inFP:
                     if line[0]==">":
                         total_reps+=1
                     outFP.write(line)
@@ -157,6 +177,10 @@ def main(args):
                         required=False,
                         action="store_true",
                         help="If enabled - will keep all temporary data")
+    parser.add_argument("--debug",
+                        required=False,
+                        action="store_true",
+                        help="If enabled - will print all commands to stdout")
     
     ################################
     ########## MMSEQS ##############
@@ -166,7 +190,12 @@ def main(args):
                         type=float_range(0.0,1.0),
                         default=0.9,
                         help="List matches above this fraction of aligned (covered) residues (see --cov-mode) [0.800]. Corresponds to the `-c` parameter in mmseqs2 easey-linclust.")
-    
+    parser.add_argument("--kmer_per_seq_scale",
+                        required=False,
+                        type=float_range(0.0,1.0),
+                        default=0.3,
+                        help="Scale the number of kmers per sequence by this factor [0.5]. Corresponds to the `--kmer-per-seq-scale` parameter in mmseqs2 easy-linclust.")
+
     ################################
     ########## FILTERS #############
     ################################
@@ -184,7 +213,11 @@ def main(args):
                         required=False,
                         type=str,
                         help="String of nucleotides to consider when filtering sequences. If a sequnece contains a character that is not listed - it will be skipped. Both aupper and lower case variants should be provided. For example: 'ATGCatgc' will only consider sequences that contain only A,T,G,C,a,t,g,c nucleotides. If not provided - all sequences will be considered.")
-    
+    parser.add_argument("--perc_ambiguity",
+                        required=False,
+                        type=float_range(0.0,1.0),
+                        default=0.0,
+                        help="Maximum fraction of ambiguous nucleotides (N) to permit in the analysis. Sequences with more than this fraction of Ns will be skipped [0.0].")
 
     parser.set_defaults(func=run)
     args=parser.parse_args()

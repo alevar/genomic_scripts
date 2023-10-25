@@ -17,5 +17,19 @@
             ],
             "console": "integratedTerminal"
         }
+        {
+            "name": "Python: subset_tree",
+            "type": "python",
+            "request": "launch",
+            "program": "./subset_tree/subset_tree.py",
+            "args": [
+                "--tree","./subset_tree/example/sequences.nwk",
+                "--output","./subset_tree/example/subset.fa",
+                "--fasta","./subset_tree/example/sequences.fa",
+                "-N","10",
+                "--debug"
+            ],
+            "console": "integratedTerminal"
+        }
     ]
 }

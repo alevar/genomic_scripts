@@ -279,21 +279,22 @@ def gffcmp_multi(args):
         mat_introns.loc[idx_loc] = len(res_introns)
         mat_exons.loc[idx_loc] = len(res_exons)
 
-    mat_exons.to_csv(fig_out+".exons.csv")
-    plt.close('all')
-    plt.clf()
-    plot(mat_exons,show_percentages=True,show_counts=False,sort_by="degree")
-    plt.suptitle('Exon Set Comparison Between Sources')
-    plt.savefig(fig_out + ".exons.png")
+    mat_exons.to_csv(output_dir+".exons.csv")
+    if args.plot:
+        plt.close('all')
+        plt.clf()
+        plot(mat_exons,show_percentages=True,show_counts=False,sort_by="degree")
+        plt.suptitle('Exon Set Comparison Between Sources')
+        plt.savefig(fig_out + ".exons.png")
 
     # compute intron overlaps and plot upset
-    mat_introns.to_csv(fig_out+".introns.csv")
-    plt.close('all')
-    plt.clf()
-    plot(mat_introns,show_percentages=True,show_counts=False,sort_by="degree")
-    plt.suptitle('Intron Set Comparison Between Sources')
-    plt.savefig(fig_out + ".introns.png")
-    mat_introns.to_csv(fig_out+".introns.csv")
+    mat_introns.to_csv(output_dir+".introns.csv")
+    if args.plot:
+        plt.close('all')
+        plt.clf()
+        plot(mat_introns,show_percentages=True,show_counts=False,sort_by="degree")
+        plt.suptitle('Intron Set Comparison Between Sources')
+        plt.savefig(fig_out + ".introns.png")
 
     # cycle through annotations and load all transcripts in
     tx_map = dict()
@@ -341,12 +342,13 @@ def gffcmp_multi(args):
         idx_loc = tuple([True if x in comb else False for x in index_names])
         mat.loc[idx_loc] = len(res)
 
-    mat.to_csv(fig_out+".tx.csv")
-    plt.close('all')
-    plt.clf()
-    plot(mat,show_percentages=True,show_counts=False,sort_by="degree")
-    plt.suptitle('Transcript Set Comparison Between Sources')
-    plt.savefig(fig_out + ".tx.png")
+    mat.to_csv(output_dir+".tx.csv")
+    if args.plot:
+        plt.close('all')
+        plt.clf()
+        plot(mat,show_percentages=True,show_counts=False,sort_by="degree")
+        plt.suptitle('Transcript Set Comparison Between Sources')
+        plt.savefig(fig_out + ".tx.png")
 
     # now compile the mapping between matching transcripts and genes based on the TMAP files generated
     generate_map(set(["="]),"tid",args)
@@ -450,6 +452,9 @@ def main(args):
                         type=int,
                         default=1,
                         help="number of gffcompare instances to run concurrently")
+    parser.add_argument("--plot",
+                        action="store_true",
+                        help="enable plotting")
     parser.set_defaults(func=gffcmp_multi)
     args = parser.parse_args()
     args.func(args)

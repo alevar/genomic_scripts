@@ -1,6 +1,6 @@
 ConfigArgParse==1.2.3
-numpy @ file:///tmp/build/80754af9/numpy_and_numpy_base_1603487797006/work
-numpydoc @ file:///tmp/build/80754af9/numpydoc_1605117425582/work
+numpy
+PyQt5
 pandas==1.1.5
 ete3==3.1.2
 

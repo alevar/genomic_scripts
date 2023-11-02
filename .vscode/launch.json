@@ -1,0 +1,35 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "clustrep",
+            "type": "python",
+            "request": "launch",
+            "program": "/Users/sparrow/genomicTools/genomic_scripts/clustRep/clustrep.py",
+            "args": [
+                "-i", "/Users/sparrow/genomicTools/genomic_scripts/clustRep/example/sequences.fa",
+                "-o", "/Users/sparrow/genomicTools/genomic_scripts/clustRep/example/rep.fa",
+                "--meta", "/Users/sparrow/genomicTools/genomic_scripts/clustRep/example/groups.tsv",
+                "--debug"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "blast_ris",
+            "type": "python",
+            "request": "launch",
+            "program": "/Users/sparrow/genomicTools/genomic_scripts/blast_ris/blast_ris.py",
+            "args": [
+                "-i1", "/Users/sparrow/genomicTools/genomic_scripts/blast_ris/example/host.blast",
+                "-i2", "/Users/sparrow/genomicTools/genomic_scripts/blast_ris/example/path.blast",
+                "-a1", "/Users/sparrow/genomicTools/genomic_scripts/blast_ris/example/host.gtf",
+                "-a2", "/Users/sparrow/genomicTools/genomic_scripts/blast_ris/example/path.gtf",
+                "-o", "/Users/sparrow/genomicTools/genomic_scripts/blast_ris/example/r",
+            ],
+            "console": "integratedTerminal"
+        }
+    ]
+}

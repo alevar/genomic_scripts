@@ -121,6 +121,10 @@ def run(args):
 
     print("total number of representative sequences: "+str(total_reps))
 
+    # cleanup tmp files unless requested to keep
+    if not args.keep_tmp:
+        shutil.rmtree(tmpdir)
+
 
 # from: https://stackoverflow.com/questions/55324449/how-to-specify-a-minimum-or-maximum-float-value-with-argparse
 def float_range(mini,maxi):

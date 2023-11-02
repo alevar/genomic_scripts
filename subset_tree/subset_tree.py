@@ -73,6 +73,24 @@ def run(args):
     for seq in preserved_genomes:
         all_kept_genomes.add(seq)
 
+    # write fasta if requested
+    if args.fasta is not None:
+        assert os.path.exists(args.fasta),"fasta file does not exist"
+        with open(args.output+".fasta","w+") as outFP:
+            write = False
+            with open(args.fasta,"r") as inFP:
+                for line in inFP:
+                    if line.startswith(">"):
+                        seqid = line.strip().replace(">","")
+                        if seqid in all_kept_genomes:
+                            outFP.write(line)
+                            write = True
+                        else:
+                            write = False
+                    else:
+                        if write is True:
+                            outFP.write(line)
+
     sub_meta = meta_df[meta_df["seqname"].isin(all_kept_genomes)].reset_index(drop=True)
     sub_meta.to_csv(args.output+".meta.csv",index=False)
 
@@ -142,6 +160,10 @@ def main(args):
                         required=True,
                         type=str,
                         help="File containing a tree to be subsetted in Newick format")
+    parser.add_argument('--fasta',
+                        required=False,
+                        type=str,
+                        help="File containing a fasta file with sequences corresponding to the tree. If provided, an output fasta file will be generated with sequences corresponding to the once found in the subsetted tree.")
     parser.add_argument('--meta',
                         required=True,
                         type=str,
@@ -164,6 +186,12 @@ def main(args):
                         required=False,
                         type=int,
                         help="If set - will be used a seed for all pseudo-random choices")
+    parser.add_argument("--debug",
+                        required=False,
+                        action="store_true",
+                        help="If enabled - will print debug information")
+    
+    # if distance between genomes available - use it to group things within a certain distance of each other
 
     parser.set_defaults(func=run)
     args=parser.parse_args()

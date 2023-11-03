@@ -35,16 +35,15 @@ def extract_donor_acceptor(fname):
             
             if lcs[2] == "transcript":
                 for i in range(1,len(chain)):
-                    donors[chain[i][0]] = gid
-                    acceptors[chain[i-1][0]] = gid
+                    donors.setdefault(lcs[0],{})[chain[i][0]] = (gid,lcs[6])
+                    acceptors.setdefault(lcs[0],{})[chain[i-1][0]] = (gid,lcs[6])
                 
                 # new transcript
                 chain = []
                 gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
 
             if lcs[2] == "exon":
-                chain.append((int(lcs[3]),int(lcs[4]),lcs[6])) # position: start,end,strand
-
+                chain.append((int(lcs[3]),int(lcs[4]))) # position: start,end,strand
     
     if os.path.exists("tmp.gtf"):
         os.remove("tmp.gtf")
@@ -129,6 +128,19 @@ def match_donor_acceptor(donors,acceptors):
     # finds pairs of donors, acceptors that are adjacent to each other
     return [(x, y) for x in donors for y in acceptors if y[0] - x[0] == 1]
 
+def find_breakpoint_with_sj(list1, list2, sj):
+    tmp1 = copy.deepcopy(list1)
+    tmp2 = copy.deepcopy(list2)
+    tmp1[sj[0][0]]+=5
+    tmp2[sj[1][0]]+=5
+    breakpoint = find_breakpoint(tmp1,tmp2)
+    # only add if breakpoint is actually at the junction site
+    if breakpoint == sj[1][0]:
+        res = tmp1[:breakpoint]+tmp2[breakpoint:]
+        score = sum(res)
+        return [score,res,breakpoint,sj]
+    return None
+
 def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     # take two mappings of the same read and find the breakpoint between them
 
@@ -159,35 +171,15 @@ def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     # find best brakepoint
     # find combination of donor/acceptor which yields optimal brakepoint
     results = []
-
-    for sj in g1dg2a:
-        tmp_binread_g1 = copy.deepcopy(binread_g1)
-        tmp_binread_g2 = copy.deepcopy(binread_g2)
-        tmp_binread_g1[sj[0][0]]+=5
-        tmp_binread_g2[sj[1][0]]+=5
-        breakpoint = find_breakpoint(tmp_binread_g1,tmp_binread_g2)
-        # only add if breakpoint is actually at the junction site
-        if breakpoint == sj[1][0]:
-            res = tmp_binread_g1[:breakpoint]+tmp_binread_g2[breakpoint:]
-            score = sum(res)
-            results.append([score,res,breakpoint,sj])
-        
-    for sj in g2dg1a:
-        tmp_binread_g1 = copy.deepcopy(binread_g1)
-        tmp_binread_g2 = copy.deepcopy(binread_g2)
-        tmp_binread_g1[sj[0][0]]+=5
-        tmp_binread_g2[sj[1][0]]+=5
-        breakpoint = find_breakpoint(tmp_binread_g1,tmp_binread_g2)
-        # only add if breakpoint is actually at the junction site
-        if breakpoint == sj[1][0]:
-            res = tmp_binread_g1[:breakpoint]+tmp_binread_g2[breakpoint:]
-            score = sum(res)
-            results.append([score,res,breakpoint,sj])
+    for sj in d1a2+d2a1:
+        res = find_breakpoint_with_sj(binread1,binread2,sj)
+        if res is not None:
+            results.append(res)
 
     if len(results)==0:
         # add the breakpoint without junction
-        breakpoint = find_breakpoint(binread_g1,binread_g2)
-        res = binread_g1[:breakpoint]+binread_g2[breakpoint:]
+        breakpoint = find_breakpoint(binread1,binread2)
+        res = binread1[:breakpoint]+binread2[breakpoint:]
         score = sum(res)
         return [score,res,breakpoint,"-"]
     else:

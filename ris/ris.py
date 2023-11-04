@@ -72,8 +72,8 @@ def extract_donor_acceptor(fname):
             
             if lcs[2] == "transcript":
                 for i in range(1,len(chain)):
-                    donors.setdefault(lcs[0],{})[chain[i][0]] = (gid,lcs[6])
-                    acceptors.setdefault(lcs[0],{})[chain[i-1][0]] = (gid,lcs[6])
+                    donors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,lcs[6])
+                    acceptors.setdefault(lcs[0],{})[chain[i][0]] = (gid,lcs[6])
                 
                 # new transcript
                 chain = []
@@ -123,7 +123,7 @@ def btop_to_list(btop,length,start_pos):
 
     return binread
 
-def find_breakpoint(list1, list2):
+def _find_breakpoint(list1, list2):
     max_sum = float('-inf')
     max_indices = []
     for i in range(len(list1)):
@@ -133,7 +133,18 @@ def find_breakpoint(list1, list2):
             max_indices = [i]
         elif current_sum == max_sum:
             max_indices.append(i)
-    return sum(max_indices) // len(max_indices) if max_indices else -1
+
+    breakpoint = sum(max_indices) // len(max_indices) if max_indices else -1
+    binread = list1[:breakpoint]+list2[breakpoint:]
+    return breakpoint,binread,max_sum
+
+def find_breakpoint(list1, list2):
+    fw_pos,fw_binread,fw_score = _find_breakpoint(list1, list2)
+    rv_pos,rv_binread,rv_score = _find_breakpoint(list2, list1)
+    if fw_score > rv_score:
+        return fw_pos,fw_binread,fw_score
+    else:
+        return rv_pos,rv_binread,rv_score
 
 def get_sites(sites,btop,start_pos_genome,start_pos_read): # start position is on the template this time
     res = []
@@ -163,19 +174,17 @@ def get_sites(sites,btop,start_pos_genome,start_pos_read): # start position is o
 
 def match_donor_acceptor(donors,acceptors):
     # finds pairs of donors, acceptors that are adjacent to each other
-    return [(x, y) for x in donors.items() for y in acceptors.items() if y[0] - x[0] == 1]
+    return [(x, y) for x in donors for y in acceptors if y[0] - x[0] == 1]
 
-def find_breakpoint_with_sj(list1, list2, sj):
+def find_breakpoint_with_sj(list1, list2, site1, site2):
     tmp1 = copy.deepcopy(list1)
     tmp2 = copy.deepcopy(list2)
-    tmp1[sj[0][0]]+=5
-    tmp2[sj[1][0]]+=5
-    breakpoint = find_breakpoint(tmp1,tmp2)
+    tmp1[site1[0]]+=5
+    tmp2[site2[0]]+=5
+    breakpoint,binread,score = find_breakpoint(tmp1,tmp2)
     # only add if breakpoint is actually at the junction site
-    if breakpoint == sj[1][0]:
-        res = tmp1[:breakpoint]+tmp2[breakpoint:]
-        score = sum(res)
-        return [score,res,breakpoint,sj]
+    if breakpoint == site1[0]:
+        return [score,binread,breakpoint,(site1,site2)]
     return None
 
 def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
@@ -204,33 +213,38 @@ def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     btopl2 = parse_btop(btop2)
     binread2 = btop_to_list(btopl2,qlen2,qstart2)
 
-    cur_donors1 = get_sites(donors1,btopl1,sstart1,qstart1)
-    cur_acceptors1 = get_sites(acceptors1,btopl1,sstart1,qstart1)
-    cur_donors2 = get_sites(donors2,btopl2,sstart2,qstart2)
-    cur_acceptors2 = get_sites(acceptors2,btopl2,sstart2,qstart2)
+    cur_donors1 = get_sites(donors1[sseqid1],btopl1,sstart1,qstart1)
+    cur_acceptors1 = get_sites(acceptors1[sseqid1],btopl1,sstart1,qstart1)
+    cur_donors2 = get_sites(donors2[sseqid2],btopl2,sstart2,qstart2)
+    cur_acceptors2 = get_sites(acceptors2[sseqid2],btopl2,sstart2,qstart2)
 
     # given lists of donors and acceptors, find suitable pairs
     # good pair is defined as a combination of g1 donor and g2 acceptor or vice versa 
     # such that they are adjacent on the read (no nuceotides between them)
-    d1a2 = match_donor_acceptor(donors1[sseqid1],acceptors2[sseqid2])
-    d2a1 = match_donor_acceptor(donors2[sseqid2],acceptors1[sseqid1])
+    d1a2 = match_donor_acceptor(cur_donors1,cur_acceptors2)
+    d2a1 = match_donor_acceptor(cur_donors2,cur_acceptors1)
+
+    # TODO: also run for unmatched donors/acceptors
+    #       if only donor or acceptor exists - give it a score of 2 or 3 instead of 5 to slightly bump it up
 
     # now for each combination of donor acceptors
     # we can modify the scores
     # find best brakepoint
     # find combination of donor/acceptor which yields optimal brakepoint
     results = []
-    for sj in d1a2+d2a1:
-        res = find_breakpoint_with_sj(binread1,binread2,sj)
+    for sj in d1a2:
+        res = find_breakpoint_with_sj(binread1,binread2,sj[0],sj[1])
+        if res is not None:
+            results.append(res)
+    for sj in d2a1:
+        res = find_breakpoint_with_sj(binread1,binread2,sj[1],sj[0])
         if res is not None:
             results.append(res)
 
     if len(results)==0:
         # add the breakpoint without junction
-        breakpoint = find_breakpoint(binread1,binread2)
-        res = binread1[:breakpoint]+binread2[breakpoint:]
-        score = sum(res)
-        return [score,res,breakpoint,None]
+        breakpoint,binread,score = find_breakpoint(binread1,binread2)
+        return [score,binread,breakpoint,None]
     else:
         # lastly, select the highest-scoring result
         best_breakpoint = max(results, key=lambda x: x[0])

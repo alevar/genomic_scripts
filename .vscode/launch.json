@@ -21,13 +21,13 @@
             "name": "ris",
             "type": "python",
             "request": "launch",
-            "program": "/Users/sparrow/genomicTools/genomic_scripts/ris/ris.py",
+            "program": "./ris/ris.py",
             "args": [
-                "-i1", "/Users/sparrow/genomicTools/genomic_scripts/ris/example/host.blast",
-                "-i2", "/Users/sparrow/genomicTools/genomic_scripts/ris/example/path.blast",
-                "-a1", "/Users/sparrow/genomicTools/genomic_scripts/ris/example/host.gtf",
-                "-a2", "/Users/sparrow/genomicTools/genomic_scripts/ris/example/path.gtf",
-                "-o", "/Users/sparrow/genomicTools/genomic_scripts/ris/example/r"
+                "-i1", "./ris/example/host.sub.blast",
+                "-i2", "./ris/example/path.sub.blast",
+                "-a1", "./ris/example/host.sub.gtf",
+                "-a2", "./ris/example/path.sub.gtf",
+                "-o", "./ris/example/r"
 	    ],
 	    "console": "integratedTerminal"
         },

@@ -10,6 +10,42 @@ import random
 import shutil
 import argparse
 import subprocess
+from intervaltree import Interval, IntervalTree
+
+def extract_genes(fname):
+    # parses a GTF file to extract information about all genes
+    # returns a dictionary mapping position to the gene name
+
+    # run gffread to standardize
+    cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
+    subprocess.call(cmd)
+
+    genes = {} # gene name to start-end coordinate
+    gene_tree = IntervalTree()
+
+    # iterate over lines of gtf to extract the genes
+    with open("tmp.gtf","r") as inFP:
+        for line in inFP:
+            if line[0]=="#":
+                continue
+            lcs = line.strip().split("\t")
+            
+            if lcs[2] == "transcript":
+                gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
+                genes.setdefault(gid,[int(lcs[3]),int(lcs[4])])
+                # update start to minimum of current and recorded
+                genes[gid][0] = min(genes[gid][0],int(lcs[3]))
+                # update end to maximum of current and recorded
+                genes[gid][1] = max(genes[gid][1],int(lcs[4]))
+
+    # move to interval tree
+    for gid,coords in genes.items():
+        gene_tree.addi(coords[0], coords[1], gid)
+
+    if os.path.exists("tmp.gtf"):
+        os.remove("tmp.gtf")
+
+    return genes
 
 def extract_donor_acceptor(fname):
     # parses a GTF file to extract information about all donor and acceptor sites
@@ -18,6 +54,7 @@ def extract_donor_acceptor(fname):
 
     # run gffread to standardize
     cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
+    subprocess.call(cmd)
 
     donors = {} # position to gene gene_id
     acceptors = {} # position to gene gene_id
@@ -126,7 +163,7 @@ def get_sites(sites,btop,start_pos_genome,start_pos_read): # start position is o
 
 def match_donor_acceptor(donors,acceptors):
     # finds pairs of donors, acceptors that are adjacent to each other
-    return [(x, y) for x in donors for y in acceptors if y[0] - x[0] == 1]
+    return [(x, y) for x in donors.items() for y in acceptors.items() if y[0] - x[0] == 1]
 
 def find_breakpoint_with_sj(list1, list2, sj):
     tmp1 = copy.deepcopy(list1)
@@ -147,6 +184,18 @@ def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     qseqid1,qlen1,sseqid1,qstart1,qend1,sstart1,send1,btop1 = m1.split("\t")
     qseqid2,qlen2,sseqid2,qstart2,qend2,sstart2,send2,btop2 = m2.split("\t")
 
+    # convert to integers
+    qlen1 = int(qlen1)
+    qstart1 = int(qstart1)
+    qend1 = int(qend1)
+    sstart1 = int(sstart1)
+    send1 = int(send1)
+    qlen2 = int(qlen2)
+    qstart2 = int(qstart2)
+    qend2 = int(qend2)
+    sstart2 = int(sstart2)
+    send2 = int(send2)
+
     assert qlen2 == qlen1, "Read lengths do not match."
     assert qseqid1 == qseqid2, "Read names do not match."
 
@@ -163,8 +212,8 @@ def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     # given lists of donors and acceptors, find suitable pairs
     # good pair is defined as a combination of g1 donor and g2 acceptor or vice versa 
     # such that they are adjacent on the read (no nuceotides between them)
-    d1a2 = match_donor_acceptor(donors1,acceptors2)
-    d2a1 = match_donor_acceptor(donors2,acceptors1)
+    d1a2 = match_donor_acceptor(donors1[sseqid1],acceptors2[sseqid2])
+    d2a1 = match_donor_acceptor(donors2[sseqid2],acceptors1[sseqid1])
 
     # now for each combination of donor acceptors
     # we can modify the scores
@@ -181,22 +230,72 @@ def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
         breakpoint = find_breakpoint(binread1,binread2)
         res = binread1[:breakpoint]+binread2[breakpoint:]
         score = sum(res)
-        return [score,res,breakpoint,"-"]
+        return [score,res,breakpoint,None]
     else:
         # lastly, select the highest-scoring result
         best_breakpoint = max(results, key=lambda x: x[0])
         return best_breakpoint
 
-def run(args):
+def next_read_group(fname1,fname2):
+    # iterate over lines of two sorted files
+    # group lines by read name (1st column)
+    # yield two lists of lines, one from each file, that have the same read name
+    with open(fname1, 'r') as inFP1, open(fname2, 'r') as inFP2:
+        iter1, iter2 = iter(inFP1), iter(inFP2)
+        line1, line2 = next(iter1, None), next(iter2, None)
+        while line1 == "\n":
+            line1 = next(iter1, None)
+        while line2 == "\n":
+            line2 = next(iter2, None)
+
+        while line1 is not None or line2 is not None:
+            current_read_name = None
+            lines1, lines2 = [], []
+
+            if line1 is not None and (line2 is None or line1.split("\t")[0] <= line2.split("\t")[0]):
+                current_read_name = line1.split("\t")[0]
+                while line1 is not None and line1.split("\t")[0] == current_read_name:
+                    lines1.append(line1.strip())
+                    line1 = next(iter1, None)
+
+            if line2 is not None and (line1 is None or line2.split("\t")[0] <= line1.split("\t")[0]):
+                current_read_name = line2.split("\t")[0] if current_read_name is None else current_read_name
+                while line2 is not None and line2.split("\t")[0] == current_read_name:
+                    lines2.append(line2.strip())
+                    line2 = next(iter2, None)
+
+            yield current_read_name, lines1, lines2
+
+def ris(args,outFP):
+    genes1 = extract_genes(args.a1)
+    genes2 = extract_genes(args.a2)
     donors1,acceptors1 = extract_donor_acceptor(args.a1)
     donors2,acceptors2 = extract_donor_acceptor(args.a2)
 
-    # what if instead of finding integration sites, we simply do the following:
-    # 1. find all reads which map to both genomes
-    # 2. search for the junction
+    # sort inputs by read name
+    cmd = ["sort","-k1,1",args.i1,"-o","tmp1"]
+    subprocess.call(cmd)
+    cmd = ["sort","-k1,1",args.i2,"-o","tmp2"]
+    subprocess.call(cmd)
+
+    # iterate over read groups
+    for read_name, lines1, lines2 in next_read_group("tmp1","tmp2"):
+        # create all unique combinations of two lists
+        for line1,line2 in [(x,y) for x in lines1 for y in lines2]:
+            score,res,breakpoint,gene = process(read_name,line1,line2,donors1,acceptors1,donors2,acceptors2,args)
+            print(read_name,score,res,breakpoint,gene)            
 
     return
 
+def run(args):
+    outFP = open(args.o,"w+")
+    try:
+        ris(args,outFP)
+    except Exception as e:
+        print(e)
+        outFP.close()
+        sys.exit(1)
+    outFP.close()
 
 def main(args):
     # sample blast command to generate desired input

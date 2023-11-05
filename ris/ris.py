@@ -37,44 +37,40 @@ class Read:
         self.sstart = int(self.sstart)
         self.send = int(self.send)
 
-        self.btopl = self.parse_btop(self.btop)
-        self.binread = self.btop_to_list(self.btopl,self.qlen,self.qstart)
+        self.parse_btop()
+        self.btop_to_list()
 
-    def parse_btop(btop_str):
-        result = []
+    def parse_btop(self):
+        self.btopl = []
         pattern = re.compile(r'(\d+)|([A-Za-z-]{2})')
-        matches = re.finditer(pattern, btop_str)
+        matches = re.finditer(pattern, self.btop)
 
         for match in matches:
             if match.group(1):
-                result.append(int(match.group(1)))
+                self.btopl.append(int(match.group(1)))
             else:
-                result.append(match.group(2))
+                self.btopl.append(match.group(2))
 
-        return result
-    
-    def btop_to_list(btop,length,start_pos):
-        binread = [0] * length
-        index = start_pos-1
+    def btop_to_list(self):
+        self.binread = [0] * self.qlen
+        index = self.qstart-1
 
-        for b in btop:
+        for b in self.btopl:
             if isinstance(b, int):
                 for i in range(index,index+b,1):
-                    binread[i] += 1
+                    self.binread[i] += 1
                 index += b
             elif isinstance(b, str):
                 if b[0]=="-": # insertion
                     # if insertion - decrement the score of the next element
                     # this is equivalent to saying, by that position the score on the reference would have decreased by this much due to insertion penalty
-                    binread[index] -= 1
+                    self.binread[index] -= 1
                 elif b[1]=="-": # deletion
-                    binread[index] -= 1
+                    self.binread[index] -= 1
                     index += 1
                 else: # mismatch
-                    binread[index] = 0
+                    self.binread[index] = 0
                     index += 1
-
-        return binread
 
     def get_sites(self,sites): # start position is on the template this time
         res = []
@@ -103,9 +99,11 @@ class Read:
         return res
     
     def load_donors(self,donors):
-        self.donors = self.get_sites(donors[self.sseqid])
+        if self.sseqid in donors:
+            self.donors = self.get_sites(donors[self.sseqid])
     def load_acceptors(self,acceptors):
-        self.donors = self.get_sites(acceptors[self.sseqid])
+        if self.sseqid in acceptors:
+            self.acceptors = self.get_sites(acceptors[self.sseqid])
     
     def read2genome(self,pos):
         # given a btop string and the start position of the read and the genome
@@ -143,22 +141,28 @@ class Binread:
         self.read1 = Read()
         self.read2 = Read()
 
-        self.binread = []
-        self.breakpoint = None
-        self.score = None
         self.sj1 = None
         self.sj2 = None
 
+        self.binread = []
+        self.breakpoint = None
+        self.score = None
+        self.genes = None
+
     def __str__(self):
+        genome1_pos = self.read1.read2genome(self.breakpoint)
+        genome2_pos = self.read2.read2genome(self.breakpoint)
+        gene1 = self.sj1[1][0] if self.sj1 is not None else "-"
+        gene2 = self.sj2[1][0] if self.sj2 is not None else "-"
         
         return "\t".join([self.read1.qseqid,
                           str(self.breakpoint),
-                          str(breakpoint[2]),
-                          str(breakpoint[0]),
-                          str(score),
+                          str(genome1_pos),
+                          str(genome2_pos),
+                          str(self.score),
                           gene1,
                           gene2,
-                          ",".join([str(x) for x in res])])+"\n")
+                          "".join([str(x) for x in self.binread])])
                
 
     def add_read1(self,line):
@@ -170,6 +174,7 @@ class Binread:
         assert self.read1.qlen is None or self.read1.qlen == self.read2.qlen, "Read lengths do not match."
         assert self.read1.qseqid is None or self.read1.qseqid == self.read2.qseqid, "Read names do not match."
 
+    @staticmethod
     def _find_breakpoint(list1, list2):
         max_sum = float('-inf')
         max_indices = []
@@ -189,9 +194,9 @@ class Binread:
         fw_pos,fw_binread,fw_score = self._find_breakpoint(self.read1.binread, self.read2.binread)
         rv_pos,rv_binread,rv_score = self._find_breakpoint(self.read2.binread, self.read1.binread)
         if fw_score > rv_score:
-            return [fw_pos,fw_binread,fw_score]
+            self.breakpoint,self.binread,self.score,self.genes = fw_pos,fw_binread,fw_score,(None,None)
         else:
-            return [rv_pos,rv_binread,rv_score]
+            self.breakpoint,self.binread,self.score,self.genes = rv_pos,rv_binread,rv_score,(None,None)
 
     def break_at(self,pos):
         # returns the result if read is broken at specific position
@@ -212,13 +217,8 @@ class Binread:
         self.sj1 = site1
         self.sj2 = site2
 
-    def find_best_breakpoint(self):
+    def find_spliced_breakpoint(self):
         results = []
-
-        # first process without junctions searching for the optimal breakpoint from the alignment alone
-        bp = self.find_breakpoint()
-        bp.append((None,None)) # set gene to None
-        results.append(bp)
 
         # now process with junctions
         if self.sj1 is not None and self.sj2 is not None and self.sj2[0]-self.sj1[0] == 1:
@@ -226,19 +226,29 @@ class Binread:
             bp[2] += 10/len(bp[1]) # add weight of junction
             bp.append((self.sj1,self.sj2))
             results.append(bp)
-        if self.sj1 is not None:
+        elif self.sj1 is not None and self.sj2 is not None and self.sj1[0]-self.sj2[0] == 1:
+            bp = self.break_at(self.sj2[0])
+            bp[2] += 10/len(bp[1]) # add weight of junction
+            bp.append((self.sj2,self.sj1))
+            results.append(bp)
+        elif self.sj1 is not None:
             bp = self.break_at(self.sj1[0])
             bp[2] += 3/len(bp[1]) # add weight of junction
             bp.append((self.sj1,None))
             results.append(bp)
-        if self.sj2 is not None:
+        elif self.sj2 is not None:
             bp = self.break_at(self.sj2[0])
             bp[2] += 3/len(bp[1]) # add weight of junction
             bp.append((None,self.sj2))
             results.append(bp)
+        else:
+            print("unknown clause")
+            sys.exit(1)
         
-        # select the highest-scoring result
-        self.breakpoint,self.binread,self.score = max(results, key=lambda x: x[2])
+        if len(results)==0:
+            self.breakpoint,self.binread,self.score,self.genes = None,None,None,None
+        else:
+            self.breakpoint,self.binread,self.score,self.genes = max(results, key=lambda x: x[2])
 
 def extract_genes(fname):
     # parses a GTF file to extract information about all genes
@@ -315,6 +325,18 @@ def extract_donor_acceptor(fname):
 
     return donors,acceptors
 
+def match_donor_acceptor(donors,acceptors):
+    # finds pairs of donors, acceptors that are adjacent to each other
+    res = []
+    for x in donors:
+        for y in acceptors:
+            if y[0] - x[0] == 1:
+                res.append((x,y))
+            else:
+                res.append((x,None))
+                res.append((None,y))
+    return res
+
 def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     # take two mappings of the same read and find the breakpoint between them
 
@@ -325,15 +347,42 @@ def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     # add donor/acceptor sites
     binread.read1.load_donors(donors1)
     binread.read1.load_acceptors(acceptors1)
-    binread.read2.load_donors(donors1)
-    binread.read2.load_acceptors(acceptors1)
+    binread.read2.load_donors(donors2)
+    binread.read2.load_acceptors(acceptors2)
 
-    binread.find_best_breakpoint()
+    # match junctions:
+    d1a2 = match_donor_acceptor(binread.read1.donors,binread.read2.acceptors)
+    d2a1 = match_donor_acceptor(binread.read2.donors,binread.read1.acceptors)
 
-    if binread.breakpoint is not None:
-        return binread
-    else:
+    # now for each combination of donor acceptors
+    # we can modify the scores
+    # find best brakepoint
+    # find combination of donor/acceptor which yields optimal brakepoint
+    results = []
+
+    # find unspliced breakpoint first
+    tmp = copy.deepcopy(binread)
+    tmp.find_breakpoint()
+    results.append(tmp)
+
+    for sj in d1a2:
+        tmp = copy.deepcopy(binread)
+        tmp.add_sj(sj[0],sj[1])
+        tmp.find_spliced_breakpoint()
+        if not tmp.breakpoint is None:
+            results.append(tmp)
+
+    for sj in d2a1:
+        tmp = copy.deepcopy(binread)
+        tmp.add_sj(sj[1],sj[0])
+        tmp.find_spliced_breakpoint()
+        if not tmp.breakpoint is None:
+            results.append(tmp)
+
+    if len(results)==0:
         return None
+    else:
+        return max(results, key=lambda x: x.score)
     
 
 def next_read_group(fname1,fname2):
@@ -380,6 +429,11 @@ def ris(args,outFP):
 
     # iterate over read groups
     for read_name, lines1, lines2 in next_read_group("tmp1","tmp2"):
+        if len(lines1)==0 or len(lines2)==0:
+            continue
+
+        print(read_name)
+        
         # create all unique combinations of two lists
         breakpoints = []
         for line1,line2 in [(x,y) for x in lines1 for y in lines2]:
@@ -390,24 +444,23 @@ def ris(args,outFP):
         if len(breakpoints)==0:
             continue
 
-        score,res,breakpoint,gene = max(breakpoints, key=lambda x: x[0])
-        gene1 = gene[0][1][0] if gene[0] is not None else "-"
-        gene2 = gene[1][1][0] if gene[1] is not None else "-"
-        outFP.write("\t".join([read_name,
-                                str(breakpoint[1]),
-                                str(breakpoint[2]),
-                                str(breakpoint[0]),
-                                str(score),
-                                gene1,
-                                gene2,
-                                ",".join([str(x) for x in res])])+"\n")
+        breakpoint = max(breakpoints, key=lambda x: x.score)
+        outFP.write(str(breakpoint)+"\n")
 
     return
 
 def run(args):
     outFP = open(args.o,"w+")
     try:
-        outFP.write("read_name\tgenome1_breakpoint\tgenome2_breakpoint\tread_breakpoint\tscore\tgene\tbinread\n")
+        outFP.write("read_name\t" +
+                    "genome1_breakpoint\t" +
+                    "genome2_breakpoint\t" +
+                    "read_breakpoint\t" +
+                    "score\t" +
+                    "junction1\t" +
+                    "junction2\t" +
+                    "gene\t" +
+                    "binread\n")
         ris(args,outFP)
     except Exception as e:
         print(e)

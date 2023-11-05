@@ -26,6 +26,9 @@ class Read:
         self.btopl = None
         self.binread = None
 
+        self.donors = []
+        self.acceptors = []
+
     def from_line(self,line):
         self.qseqid,self.qlen,self.sseqid,self.qstart,self.qend,self.sstart,self.send,self.btop = line.strip().split("\t")
         self.qlen = int(self.qlen)
@@ -72,76 +75,45 @@ class Read:
                     index += 1
 
         return binread
-    
 
-
-class Breakpoint:
-    def __init__(self):
-        self.read1 = Read()
-        self.read2 = Read()
-
-        self.binread = []
-        self.breakpoint = None
-        self.score = None
-        self.sj1 = None
-        self.sj2 = None
-
-    def add_read1(self,line):
-        assert qlen2 == qlen1, "Read lengths do not match."
-        assert qseqid1 == qseqid2, "Read names do not match."
-        self.read1.from_line(line)
-    def add_read2(self,line):
-        assert qlen2 == qlen1, "Read lengths do not match."
-        assert qseqid1 == qseqid2, "Read names do not match."
-        self.read2.from_line(line)
-
-    def _find_breakpoint(self):
-        max_sum = float('-inf')
-        max_indices = []
-        for i in range(len(list1)):
-            current_sum = sum(list1[:i]) + sum(list2[i:])
-            if current_sum > max_sum:
-                max_sum = current_sum
-                max_indices = [i]
-            elif current_sum == max_sum:
-                max_indices.append(i)
-
-        breakpoint = sum(max_indices) // len(max_indices) if max_indices else -1
-        binread = list1[:breakpoint]+list2[breakpoint:]
-        return [breakpoint,binread,round(max_sum/len(binread),2)]
-
-    def find_breakpoint(self):
-        fw_pos,fw_binread,fw_score = _find_breakpoint(list1, list2)
-        rv_pos,rv_binread,rv_score = _find_breakpoint(list2, list1)
-        if fw_score > rv_score:
-            return [fw_pos,fw_binread,fw_score]
-        else:
-            return [rv_pos,rv_binread,rv_score]
+    def get_sites(self,sites): # start position is on the template this time
+        res = []
         
-    def find_breakpoint_with_sj(self, site1, site2):
-        tmp1 = copy.deepcopy(list1)
-        tmp2 = copy.deepcopy(list2)
-        if site1 and site2: # prioritize cases with matching known junctions
-            tmp1[site1[0]]+=5
-            tmp2[site2[0]]+=5
-        else: # however if only odnor or acceptor is known - it is possible the junction is cryptic. give it a slight bump
-            if site1:
-                tmp1[site1[0]]+=3
-            if site2:
-                tmp2[site2[0]]+=3
-        breakpoint,binread,score = find_breakpoint(tmp1,tmp2)
-        # only add if breakpoint is actually at the junction site
-        if breakpoint == site1[0]:
-            return [score,binread,breakpoint,(site1,site2)]
-        return None
+        index_read = self.qstart-1
+        index_genome = self.sstart-1
 
-    def read2genome(btop,start_pos_read,start_pos_genome,pos):
+        for b in self.btopl:
+            if isinstance(b, int):
+                for i in range(0,b,1):
+                    if index_genome+i in sites:
+                        res.append((index_read+i,sites[index_genome+i]))
+                index_genome += b
+                index_read += b
+            elif isinstance(b, str):
+                if b[0]=="-": # insertion in read
+                    index_genome += 1
+                elif b[1]=="-": # deletion from read
+                    index_read += 1
+                else: # mismatch - treat as a regular match here
+                    if index_genome in sites:
+                        res.append((index_read,sites[index_genome]))
+                    index_genome += 1
+                    index_read += 1
+
+        return res
+    
+    def load_donors(self,donors):
+        self.donors = self.get_sites(donors[self.sseqid])
+    def load_acceptors(self,acceptors):
+        self.donors = self.get_sites(acceptors[self.sseqid])
+    
+    def read2genome(self,pos):
         # given a btop string and the start position of the read and the genome
         # return the position on the genome corresponding to the position on the read
-        index_read = start_pos_read-1
-        index_genome = start_pos_genome-1
+        index_read = self.qstart-1
+        index_genome = self.sstart-1
 
-        for b in btop:
+        for b in self.btopl:
             if index_read == pos:
                 return index_genome
             if isinstance(b, int):
@@ -157,14 +129,116 @@ class Breakpoint:
                     index_genome += 1
                     index_read += 1
 
-        if pos < start_pos_read:
+        if pos < self.qstart:
             # if insertion is upstream of the read start position
             # just return the start position - the difference between the two
-            return start_pos_genome - (start_pos_read - pos)
+            return self.sstart - (self.qstart - pos)
         else:
             # Otherwise if the position is further down the read than the btop string
             # just add the difference
             return index_genome + (pos - index_read)
+
+class Binread:
+    def __init__(self):
+        self.read1 = Read()
+        self.read2 = Read()
+
+        self.binread = []
+        self.breakpoint = None
+        self.score = None
+        self.sj1 = None
+        self.sj2 = None
+
+    def __str__(self):
+        
+        return "\t".join([self.read1.qseqid,
+                          str(self.breakpoint),
+                          str(breakpoint[2]),
+                          str(breakpoint[0]),
+                          str(score),
+                          gene1,
+                          gene2,
+                          ",".join([str(x) for x in res])])+"\n")
+               
+
+    def add_read1(self,line):
+        self.read1.from_line(line)
+        assert self.read2.qlen is None or self.read1.qlen == self.read2.qlen, "Read lengths do not match."
+        assert self.read2.qseqid is None or self.read1.qseqid == self.read2.qseqid, "Read names do not match."
+    def add_read2(self,line):
+        self.read2.from_line(line)
+        assert self.read1.qlen is None or self.read1.qlen == self.read2.qlen, "Read lengths do not match."
+        assert self.read1.qseqid is None or self.read1.qseqid == self.read2.qseqid, "Read names do not match."
+
+    def _find_breakpoint(list1, list2):
+        max_sum = float('-inf')
+        max_indices = []
+        for i in range(len(list1)):
+            current_sum = sum(list1[:i]) + sum(list2[i:])
+            if current_sum > max_sum:
+                max_sum = current_sum
+                max_indices = [i]
+            elif current_sum == max_sum:
+                max_indices.append(i)
+
+        breakpoint = sum(max_indices) // len(max_indices) if max_indices else -1
+        binread = list1[:breakpoint]+list2[breakpoint:]
+        return [breakpoint,binread,round(max_sum/len(binread),2)]
+
+    def find_breakpoint(self):
+        fw_pos,fw_binread,fw_score = self._find_breakpoint(self.read1.binread, self.read2.binread)
+        rv_pos,rv_binread,rv_score = self._find_breakpoint(self.read2.binread, self.read1.binread)
+        if fw_score > rv_score:
+            return [fw_pos,fw_binread,fw_score]
+        else:
+            return [rv_pos,rv_binread,rv_score]
+
+    def break_at(self,pos):
+        # returns the result if read is broken at specific position
+        # can be used to score breaks at junction sites by explicitely splitting at a given position
+        # and incrementing the returned score by the wight of the junction
+        
+        # evaluate both sides and return the highest score
+        fw_binread = self.read1.binread[:pos]+self.read2.binread[pos:]
+        fw_score = sum(fw_binread)/len(fw_binread)
+        rv_binread = self.read2.binread[:pos]+self.read1.binread[pos:]
+        rv_score = sum(rv_binread)/len(rv_binread)
+        if fw_score > rv_score:
+            return [pos,fw_binread,fw_score]
+        else:
+            return [pos,rv_binread,rv_score]
+        
+    def add_sj(self,site1,site2):
+        self.sj1 = site1
+        self.sj2 = site2
+
+    def find_best_breakpoint(self):
+        results = []
+
+        # first process without junctions searching for the optimal breakpoint from the alignment alone
+        bp = self.find_breakpoint()
+        bp.append((None,None)) # set gene to None
+        results.append(bp)
+
+        # now process with junctions
+        if self.sj1 is not None and self.sj2 is not None and self.sj2[0]-self.sj1[0] == 1:
+            bp = self.break_at(self.sj1[0])
+            bp[2] += 10/len(bp[1]) # add weight of junction
+            bp.append((self.sj1,self.sj2))
+            results.append(bp)
+        if self.sj1 is not None:
+            bp = self.break_at(self.sj1[0])
+            bp[2] += 3/len(bp[1]) # add weight of junction
+            bp.append((self.sj1,None))
+            results.append(bp)
+        if self.sj2 is not None:
+            bp = self.break_at(self.sj2[0])
+            bp[2] += 3/len(bp[1]) # add weight of junction
+            bp.append((None,self.sj2))
+            results.append(bp)
+        
+        # select the highest-scoring result
+        self.breakpoint,self.binread,self.score = max(results, key=lambda x: x[2])
 
 def extract_genes(fname):
     # parses a GTF file to extract information about all genes
@@ -241,44 +315,6 @@ def extract_donor_acceptor(fname):
 
     return donors,acceptors
 
-def get_sites(sites,btop,start_pos_genome,start_pos_read): # start position is on the template this time
-    res = []
-    
-    index_read = start_pos_read-1
-    index_genome = start_pos_genome-1
-
-    for b in btop:
-        if isinstance(b, int):
-            for i in range(0,b,1):
-                if index_genome+i in sites:
-                    res.append((index_read+i,sites[index_genome+i]))
-            index_genome += b
-            index_read += b
-        elif isinstance(b, str):
-            if b[0]=="-": # insertion in read
-                index_genome += 1
-            elif b[1]=="-": # deletion from read
-                index_read += 1
-            else: # mismatch - treat as a regular match here
-                if index_genome in sites:
-                    res.append((index_read,sites[index_genome]))
-                index_genome += 1
-                index_read += 1
-
-    return res
-
-def match_donor_acceptor(donors,acceptors):
-    # finds pairs of donors, acceptors that are adjacent to each other
-    res = []
-    for x in donors:
-        for y in acceptors:
-            if y[0] - x[0] == 1:
-                res.append((x,y))
-            else:
-                res.append((x,None))
-                res.append((None,y))
-    return res
-
 def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     # take two mappings of the same read and find the breakpoint between them
 
@@ -286,45 +322,19 @@ def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
     binread.add_read1(m1)
     binread.add_read2(m2)
 
-    cur_donors1 = get_sites(donors1[sseqid1],btopl1,sstart1,qstart1)
-    cur_acceptors1 = get_sites(acceptors1[sseqid1],btopl1,sstart1,qstart1)
-    cur_donors2 = get_sites(donors2[sseqid2],btopl2,sstart2,qstart2)
-    cur_acceptors2 = get_sites(acceptors2[sseqid2],btopl2,sstart2,qstart2)
+    # add donor/acceptor sites
+    binread.read1.load_donors(donors1)
+    binread.read1.load_acceptors(acceptors1)
+    binread.read2.load_donors(donors1)
+    binread.read2.load_acceptors(acceptors1)
 
-    # given lists of donors and acceptors, find suitable pairs
-    # good pair is defined as a combination of g1 donor and g2 acceptor or vice versa 
-    # such that they are adjacent on the read (no nuceotides between them)
-    d1a2 = match_donor_acceptor(cur_donors1,cur_acceptors2)
-    d2a1 = match_donor_acceptor(cur_donors2,cur_acceptors1)
+    binread.find_best_breakpoint()
 
-    # now for each combination of donor acceptors
-    # we can modify the scores
-    # find best brakepoint
-    # find combination of donor/acceptor which yields optimal brakepoint
-    results = []
-    for sj in d1a2:
-        res = find_breakpoint_with_sj(binread1,binread2,sj[0],sj[1])
-        if res is not None:
-            results.append(res)
-    for sj in d2a1:
-        res = find_breakpoint_with_sj(binread1,binread2,sj[1],sj[0])
-        if res is not None:
-            results.append(res)
-
-    best_breakpoint = []
-    if len(results)==0:
-        # add the breakpoint without junction
-        best_breakpoint = find_breakpoint(binread1,binread2)
-        best_breakpoint.append((None,None)) # set gene to None
+    if binread.breakpoint is not None:
+        return binread
     else:
-        # lastly, select the highest-scoring result
-        best_breakpoint = max(results, key=lambda x: x[0])
+        return None
     
-    # get breakpoint on the genomes
-    g1breakpoint = read2genome(btopl1,qstart1,sstart1,best_breakpoint[2])
-    g2breakpoint = read2genome(btopl2,qstart2,sstart2,best_breakpoint[2])
-    best_breakpoint[2] = (best_breakpoint[2],g1breakpoint,g2breakpoint)
-    return best_breakpoint
 
 def next_read_group(fname1,fname2):
     # iterate over lines of two sorted files
@@ -374,7 +384,8 @@ def ris(args,outFP):
         breakpoints = []
         for line1,line2 in [(x,y) for x in lines1 for y in lines2]:
             res = process(read_name,line1,line2,donors1,acceptors1,donors2,acceptors2,args)
-            breakpoints.append(res)
+            if res is not None:
+                breakpoints.append(res)
 
         if len(breakpoints)==0:
             continue

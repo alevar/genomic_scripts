@@ -162,6 +162,8 @@ class Binread:
                           str(self.score),
                           gene1,
                           gene2,
+                          "-", # TODO: host gene
+                          "-", # TODO: path gene
                           "".join([str(x) for x in self.binread])])
                
 
@@ -431,8 +433,6 @@ def ris(args,outFP):
     for read_name, lines1, lines2 in next_read_group("tmp1","tmp2"):
         if len(lines1)==0 or len(lines2)==0:
             continue
-
-        print(read_name)
         
         # create all unique combinations of two lists
         breakpoints = []
@@ -453,13 +453,14 @@ def run(args):
     outFP = open(args.o,"w+")
     try:
         outFP.write("read_name\t" +
+                    "read_breakpoint\t" +
                     "genome1_breakpoint\t" +
                     "genome2_breakpoint\t" +
-                    "read_breakpoint\t" +
                     "score\t" +
                     "junction1\t" +
                     "junction2\t" +
-                    "gene\t" +
+                    "gene1\t" +
+                    "gene2\t" +
                     "binread\n")
         ris(args,outFP)
     except Exception as e:

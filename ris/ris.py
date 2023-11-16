@@ -160,6 +160,8 @@ class Binread:
         
         return "\t".join([self.read1.qseqid,
                           str(self.breakpoint),
+                          self.read1.sseqid,
+                          self.read2.sseqid,
                           str(genome1_pos),
                           str(genome2_pos),
                           str(self.score),
@@ -255,7 +257,7 @@ class Binread:
         else:
             self.breakpoint,self.binread,self.score,self.genes = max(results, key=lambda x: x[2])
 
-def extract_genes(fname):
+def extract_genes(fname,exonic=False):
     # parses a GTF file to extract information about all genes
     # returns a dictionary mapping position to the gene name
 
@@ -272,23 +274,29 @@ def extract_genes(fname):
             if line[0]=="#":
                 continue
             lcs = line.strip().split("\t")
-            
-            if lcs[2] == "transcript":
-                gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
-                genes.setdefault(gid,[lcs[0],lcs[6],int(lcs[3]),int(lcs[4])])
-                # update start to minimum of current and recorded
-                genes[gid][2] = min(genes[gid][2],int(lcs[3]))
-                # update end to maximum of current and recorded
-                genes[gid][3] = max(genes[gid][3],int(lcs[4]))
+            if exonic:
+                if lcs[2] == "exon":
+                    gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
 
-    # move to interval tree
-    for gid,coords in genes.items():
-        gene_trees.setdefault((coords[0],coords[1]),IntervalTree()).addi(coords[2], coords[3], gid)
+                    gene_trees.setdefault((lcs[0],lcs[6]),IntervalTree()).addi(int(lcs[3]),int(lcs[4])+1, gid) # +1 because intervaltree is exclusive on the right
+            else:
+                if lcs[2] == "transcript":
+                    gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
+                    genes.setdefault(gid,[lcs[0],lcs[6],int(lcs[3]),int(lcs[4])+1])
+                    # update start to minimum of current and recorded
+                    genes[gid][2] = min(genes[gid][2],int(lcs[3]))
+                    # update end to maximum of current and recorded
+                    genes[gid][3] = max(genes[gid][3],int(lcs[4])+1)
+
+    if not exonic:
+        # move to interval tree
+        for gid,coords in genes.items():
+            gene_trees.setdefault((coords[0],coords[1]),IntervalTree()).addi(coords[2], coords[3], gid)
 
     if os.path.exists("tmp.gtf"):
         os.remove("tmp.gtf")
 
-    return genes,gene_trees
+    return gene_trees
 
 def extract_donor_acceptor(fname):
     # parses a GTF file to extract information about all donor and acceptor sites
@@ -430,8 +438,8 @@ def next_read_group(fname1,fname2):
             yield current_read_name, lines1, lines2
 
 def ris(args,outFP):
-    genes1,gene_trees1 = extract_genes(args.a1)
-    genes2,gene_trees2 = extract_genes(args.a2)
+    gene_trees1 = extract_genes(args.a1,args.exonic)
+    gene_trees2 = extract_genes(args.a2,args.exonic)
     donors1,acceptors1 = extract_donor_acceptor(args.a1)
     donors2,acceptors2 = extract_donor_acceptor(args.a2)
 
@@ -480,11 +488,25 @@ def ris(args,outFP):
 
     return
 
+def ris_pass2(args,outFP):
+    # read in the output of the first pass and collect all breakpoints
+    # extra weight is assigned if the breakpoint matches donor/acceptor or both
+    bps = []
+    with open(args.o,"r") as inFP:
+        next(inFP) # skip header
+        for line in inFP:
+            lcs = line.strip().split("\t")
+            if lcs[0] not in bps:
+                bps[lcs[0]] = []
+            bps.append(lcs)
+
 def run(args):
-    outFP = open(args.o,"w+")
     try:
+        outFP = open(args.o,"w+")
         outFP.write("read_name\t" +
                     "read_breakpoint\t" +
+                    "genome1_seqid\t",
+                    "genome2_seqid\t",
                     "genome1_breakpoint\t" +
                     "genome2_breakpoint\t" +
                     "score\t" +
@@ -494,11 +516,29 @@ def run(args):
                     "gene2\t" +
                     "binread\n")
         ris(args,outFP)
+        outFP.close()
+
+        if args.two_pass:
+            outFP2 = open(args.o+".corrected","w+")
+            outFP.write("read_name\t" +
+                    "read_breakpoint\t" +
+                    "genome1_seqid\t",
+                    "genome2_seqid\t",
+                    "genome1_breakpoint\t" +
+                    "genome2_breakpoint\t" +
+                    "score\t" +
+                    "junction1\t" +
+                    "junction2\t" +
+                    "gene1\t" +
+                    "gene2\t" +
+                    "binread\n")
+            
+            ris_pass2(args,outFP2)
+            outFP2.close()
+
     except Exception as e:
         print(e)
-        outFP.close()
         sys.exit(1)
-    outFP.close()
 
 # add gene information
 
@@ -530,6 +570,14 @@ def main(args):
                         required=True,
                         type=str,
                         help="GTF file containing gene annotations for genome #2.")
+    parser.add_argument('-exonic',
+                        required=False,
+                        action='store_true',
+                        help="Only consider exonic regions when extracting gene coordinates. Mapped coordinates of the read are matched against the gene coordinate set and if any position overlaps - the match will be reported. By default, exonic and intronic positions are considered. If this flag is enabled and read is contained entirely within an intron - it will not be reported as a match for the gene.")
+    parser.add_argument('-two_pass',
+                        required=False,
+                        action='store_true',
+                        help="Run two pass approach. First pass will find all possible breakpoints. Second pass will try to match breakpoints that are close to each other.")
     parser.add_argument('-o',
                         required=True,
                         type=str,

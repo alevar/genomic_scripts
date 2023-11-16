@@ -29,6 +29,9 @@ class Read:
         self.donors = []
         self.acceptors = []
 
+    def to_interval(self):
+        return Interval(min(self.sstart,self.send),max(self.sstart,self.send),self)
+
     def from_line(self,line):
         self.qseqid,self.qlen,self.sseqid,self.qstart,self.qend,self.sstart,self.send,self.btop = line.strip().split("\t")
         self.qlen = int(self.qlen)
@@ -162,8 +165,8 @@ class Binread:
                           str(self.score),
                           gene1,
                           gene2,
-                          "-", # TODO: host gene
-                          "-", # TODO: path gene
+                          ";".join(list(self.genes[0])),
+                          ";".join(list(self.genes[1])),
                           "".join([str(x) for x in self.binread])])
                
 
@@ -261,7 +264,7 @@ def extract_genes(fname):
     subprocess.call(cmd)
 
     genes = {} # gene name to start-end coordinate
-    gene_tree = IntervalTree()
+    gene_trees = {}
 
     # iterate over lines of gtf to extract the genes
     with open("tmp.gtf","r") as inFP:
@@ -272,20 +275,20 @@ def extract_genes(fname):
             
             if lcs[2] == "transcript":
                 gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
-                genes.setdefault(gid,[int(lcs[3]),int(lcs[4])])
+                genes.setdefault(gid,[lcs[0],lcs[6],int(lcs[3]),int(lcs[4])])
                 # update start to minimum of current and recorded
-                genes[gid][0] = min(genes[gid][0],int(lcs[3]))
+                genes[gid][2] = min(genes[gid][2],int(lcs[3]))
                 # update end to maximum of current and recorded
-                genes[gid][1] = max(genes[gid][1],int(lcs[4]))
+                genes[gid][3] = max(genes[gid][3],int(lcs[4]))
 
     # move to interval tree
     for gid,coords in genes.items():
-        gene_tree.addi(coords[0], coords[1], gid)
+        gene_trees.setdefault((coords[0],coords[1]),IntervalTree()).addi(coords[2], coords[3], gid)
 
     if os.path.exists("tmp.gtf"):
         os.remove("tmp.gtf")
 
-    return genes
+    return genes,gene_trees
 
 def extract_donor_acceptor(fname):
     # parses a GTF file to extract information about all donor and acceptor sites
@@ -312,15 +315,24 @@ def extract_donor_acceptor(fname):
             
             if lcs[2] == "transcript":
                 for i in range(1,len(chain)):
-                    donors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,lcs[6])
-                    acceptors.setdefault(lcs[0],{})[chain[i][0]] = (gid,lcs[6])
-                
+                    if chain[i][0] - chain[i-1][1] < 1:
+                        print("Intron too short. Discarding. ",chain[i-1],chain[i])
+                        continue
+
+                    # consider strand
+                    if lcs[6] == "+":
+                        donors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,lcs[6])
+                        acceptors.setdefault(lcs[0],{})[chain[i][0]] = (gid,lcs[6])
+                    else:
+                        donors.setdefault(lcs[0],{})[chain[i][0]] = (gid,lcs[6])
+                        acceptors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,lcs[6])
+                        
                 # new transcript
                 chain = []
                 gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
 
             if lcs[2] == "exon":
-                chain.append((int(lcs[3]),int(lcs[4]))) # position: start,end,strand
+                chain.append((int(lcs[3])+1,int(lcs[4])-1)) # position: start,end,strand
     
     if os.path.exists("tmp.gtf"):
         os.remove("tmp.gtf")
@@ -418,8 +430,8 @@ def next_read_group(fname1,fname2):
             yield current_read_name, lines1, lines2
 
 def ris(args,outFP):
-    genes1 = extract_genes(args.a1)
-    genes2 = extract_genes(args.a2)
+    genes1,gene_trees1 = extract_genes(args.a1)
+    genes2,gene_trees2 = extract_genes(args.a2)
     donors1,acceptors1 = extract_donor_acceptor(args.a1)
     donors2,acceptors2 = extract_donor_acceptor(args.a2)
 
@@ -439,6 +451,25 @@ def ris(args,outFP):
         for line1,line2 in [(x,y) for x in lines1 for y in lines2]:
             res = process(read_name,line1,line2,donors1,acceptors1,donors2,acceptors2,args)
             if res is not None:
+                it1 = res.read1.to_interval()
+                it2 = res.read2.to_interval()
+                found_genes1 = set()
+                found_genes2 = set()
+                for seqid,genes in gene_trees1.items():
+                    inter = genes.overlap(it1)
+                    if len(inter)>0:
+                        found_genes1.update([x[2] for x in inter])
+                for seqid,genes in gene_trees2.items():
+                    inter = genes.overlap(it2)
+                    if len(inter)>0:
+                        found_genes2.update([x[2] for x in inter])
+                
+                if len(found_genes1)==0:
+                    found_genes1.add("-")
+                if len(found_genes2)==0:
+                    found_genes2.add("-")
+                
+                res.genes = (found_genes1,found_genes2)
                 breakpoints.append(res)
 
         if len(breakpoints)==0:
@@ -468,6 +499,12 @@ def run(args):
         outFP.close()
         sys.exit(1)
     outFP.close()
+
+# add gene information
+
+# implement two pass approach:
+# infer all breakpoints in first pass
+# compute statistics and repeat anslysis trying to match the closely-positioned breakpoints
 
 def main(args):
     # sample blast command to generate desired input

@@ -31,8 +31,42 @@
                 "-two_pass",
                 "-group",
                 "-exonic",
-	    ],
-	    "console": "integratedTerminal"
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
+            "name": "ris test1",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/host.test1.blast",
+                "-i2", "./ris/example/path.test1.blast",
+                "-a1", "./ris/example/host.test1.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/test1",
+                "-two_pass",
+                "-group",
+                "-exonic",
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
+            "name": "ris AY69_A4p3_GIMAP7.R2",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/AY69_A4p3_GIMAP7.R2.host.blastn.6",
+                "-i2", "./ris/example/AY69_A4p3_GIMAP7.R2.path.blastn.6",
+                "-a1", "./ris/example/host.test1.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/AY69_A4p3_GIMAP7.R2",
+                "-two_pass",
+                "-group",
+                "-exonic",
+	        ],
+	        "console": "integratedTerminal"
         },
         {
             "name": "Python: subset_tree",

@@ -77,6 +77,12 @@ class Read:
 
     def get_sites(self,sites): # start position is on the template this time
         res = []
+
+        # handle the case when the insertion is upstream of the read start position
+        for i in range(self.qstart-1,-1,-1):
+            genome_pos = self.sstart - (self.qstart - i)
+            if genome_pos in sites:
+                res.append((i,sites[genome_pos]))
         
         index_read = self.qstart-1
         index_genome = self.sstart-1
@@ -99,6 +105,12 @@ class Read:
                     index_genome += 1
                     index_read += 1
 
+        # handle the case when the insertion is downstream of the read end position
+        for i in range(index_read,self.qlen,1):
+            genome_pos = index_genome + (i - index_read)
+            if genome_pos in sites:
+                res.append(i,sites[genome_pos])
+
         return res
     
     def load_donors(self,donors):
@@ -107,6 +119,50 @@ class Read:
     def load_acceptors(self,acceptors):
         if self.sseqid in acceptors:
             self.acceptors = self.get_sites(acceptors[self.sseqid])
+
+    def _add_weight(self,weights,pos_genome,pos_read):
+        weight = weights.get((self.sseqid,pos_genome),None)
+        if weight is not None:
+            self.binread[pos_read] += weight
+
+    def add_weights(self,weights):
+        # iterates over the positions on the read and sets weights according to the dictionary
+
+        # handle the case when the insertion is upstream of the read start position
+        for i in range(self.qstart-1,-1,-1):
+            genome_pos = self.sstart - (self.qstart - i)
+            self._add_weight(weights,genome_pos,i)
+
+        index_read = self.qstart-1
+        index_genome = self.sstart-1
+        self._add_weight(weights,index_genome,index_read)
+
+        for b in self.btopl:
+            if isinstance(b, int):
+                for i in range(0,b,1):
+                    index_genome += 1
+                    index_read += 1
+                    self._add_weight(weights,index_genome,index_read)
+
+            elif isinstance(b, str):
+                if b[0]=="-": # insertion in read
+                    index_genome += 1
+                    weight = weights.get((self.sseqid,index_genome),None)
+                    self._add_weight(weights,index_genome,index_read)
+
+                elif b[1]=="-": # deletion from read
+                    index_read += 1
+                else: # mismatch - treat as a regular match here
+                    index_genome += 1
+                    index_read += 1
+                    self._add_weight(weights,index_genome,index_read)
+
+        # handle the case when the insertion is downstream of the read end position
+        for i in range(index_read,self.qlen,1):
+            genome_pos = index_genome + (i - index_read)
+            self._add_weight(weights,genome_pos,i)
+
+        return
     
     def read2genome(self,pos):
         # given a btop string and the start position of the read and the genome
@@ -359,12 +415,17 @@ def match_donor_acceptor(donors,acceptors):
                 res.append((None,y))
     return res
 
-def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args):
+def process(name,m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
     # take two mappings of the same read and find the breakpoint between them
 
     binread = Binread()
     binread.add_read1(m1)
     binread.add_read2(m2)
+
+    # add weights from the first pass if available
+    if not pass1_bps is None:
+        binread.read1.add_weights(pass1_bps)
+        binread.read2.add_weights(pass1_bps)
 
     # add donor/acceptor sites
     binread.read1.load_donors(donors1)
@@ -437,7 +498,7 @@ def next_read_group(fname1,fname2):
 
             yield current_read_name, lines1, lines2
 
-def ris(args,outFP):
+def ris(args,outFP,pass1_bps=None):
     gene_trees1 = extract_genes(args.a1,args.exonic)
     gene_trees2 = extract_genes(args.a2,args.exonic)
     donors1,acceptors1 = extract_donor_acceptor(args.a1)
@@ -457,7 +518,7 @@ def ris(args,outFP):
         # create all unique combinations of two lists
         breakpoints = []
         for line1,line2 in [(x,y) for x in lines1 for y in lines2]:
-            res = process(read_name,line1,line2,donors1,acceptors1,donors2,acceptors2,args)
+            res = process(read_name,line1,line2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps)
             if res is not None:
                 it1 = res.read1.to_interval()
                 it2 = res.read2.to_interval()
@@ -488,25 +549,83 @@ def ris(args,outFP):
 
     return
 
-def ris_pass2(args,outFP):
+def ris_pass2(args,in_fname,outFP):
     # read in the output of the first pass and collect all breakpoints
     # extra weight is assigned if the breakpoint matches donor/acceptor or both
-    bps = []
-    with open(args.o,"r") as inFP:
+    pass1_bps = {} # (seqid,bp):weighted count
+    with open(in_fname,"r") as inFP:
         next(inFP) # skip header
         for line in inFP:
             lcs = line.strip().split("\t")
-            if lcs[0] not in bps:
-                bps[lcs[0]] = []
-            bps.append(lcs)
+            seqid1 = lcs[2]
+            seqid2 = lcs[3]
+            bp1 = int(lcs[4])
+            bp2 = int(lcs[5])
+            sj1 = lcs[7]!="-"
+            sj2 = lcs[8]!="-"
+            weight1 = 1 + (1 if sj1 else 0) + (1 if sj2 else 0)
+            weight2 = 1 + (1 if sj2 else 0) + (1 if sj1 else 0)
+            pass1_bps.setdefault((seqid1,bp1),0)
+            pass1_bps.setdefault((seqid2,bp2),0)
+            pass1_bps[(seqid1,bp1)] += weight1
+            pass1_bps[(seqid2,bp2)] += weight2
+
+    # rerun ris detection, this time adding weights according to the previous round
+    ris(args,outFP,pass1_bps)
+
+def group_breakpoints(args,in_fname,outFP):
+    # read in the input, count the number of times each breakpoint is observed, output the result
+
+    groups = {} # (seqid1,seqid2,bp1,bp2):(count,sj1,sj2,gene1,gene2)
+
+
+    with open(in_fname,"r") as inFP:
+        next(inFP)
+        for line in inFP:
+            lcs = line.strip().split("\t")
+            seqid1 = lcs[2]
+            seqid2 = lcs[3]
+            bp1 = int(lcs[4])
+            bp2 = int(lcs[5])
+            sj1 = lcs[7]
+            sj2 = lcs[8]
+            gene1 = lcs[9]
+            gene2 = lcs[10]
+
+            groups.setdefault((seqid1,seqid2,bp1,bp2),[0,sj1,sj2,gene1,gene2])
+            group_sj1 = groups[(seqid1,seqid2,bp1,bp2)][1]
+            group_sj2 = groups[(seqid1,seqid2,bp1,bp2)][2]
+            group_gene1 = groups[(seqid1,seqid2,bp1,bp2)][3]
+            group_gene2 = groups[(seqid1,seqid2,bp1,bp2)][4]
+            assert group_sj1 == sj1, "sj1 does not match"
+            assert group_sj2 == sj2, "sj2 does not match"
+            assert group_gene1 == gene1, "gene1 does not match"
+            assert group_gene2 == gene2, "gene2 does not match"
+
+            groups[(seqid1,seqid2,bp1,bp2)][0] += 1
+
+    for k,v in groups.items():
+        outFP.write(k[0]+"\t"+
+                    k[1]+"\t"+
+                    str(k[2])+"\t"+
+                    str(k[3])+"\t"+
+                    str(v[0])+"\t"+
+                    v[1]+"\t"+
+                    v[2]+"\t"+
+                    v[3]+"\t"+
+                    v[4]+"\n")
+
+
+    return
 
 def run(args):
+    group_in_fname = None
     try:
         outFP = open(args.o,"w+")
         outFP.write("read_name\t" +
                     "read_breakpoint\t" +
-                    "genome1_seqid\t",
-                    "genome2_seqid\t",
+                    "genome1_seqid\t" +
+                    "genome2_seqid\t" +
                     "genome1_breakpoint\t" +
                     "genome2_breakpoint\t" +
                     "score\t" +
@@ -518,12 +637,14 @@ def run(args):
         ris(args,outFP)
         outFP.close()
 
+        group_in_fname = args.o
+
         if args.two_pass:
             outFP2 = open(args.o+".corrected","w+")
-            outFP.write("read_name\t" +
+            outFP2.write("read_name\t" +
                     "read_breakpoint\t" +
-                    "genome1_seqid\t",
-                    "genome2_seqid\t",
+                    "genome1_seqid\t" +
+                    "genome2_seqid\t" +
                     "genome1_breakpoint\t" +
                     "genome2_breakpoint\t" +
                     "score\t" +
@@ -533,8 +654,24 @@ def run(args):
                     "gene2\t" +
                     "binread\n")
             
-            ris_pass2(args,outFP2)
+            ris_pass2(args,args.o,outFP2)
             outFP2.close()
+
+            group_in_fname = args.o+".corrected"
+
+        if args.group:
+            group_outFP = open(args.o+".grouped","w+")
+            group_outFP.write("genome1_seqid\t" +
+                                "genome2_seqid\t" +
+                                "genome1_breakpoint\t" +
+                                "genome2_breakpoint\t" +
+                                "count\t" +
+                                "junction1\t" +
+                                "junction2\t" +
+                                "gene1\t" +
+                                "gene2\n")
+            group_breakpoints(args,group_in_fname,group_outFP)
+            group_outFP.close()
 
     except Exception as e:
         print(e)
@@ -578,6 +715,10 @@ def main(args):
                         required=False,
                         action='store_true',
                         help="Run two pass approach. First pass will find all possible breakpoints. Second pass will try to match breakpoints that are close to each other.")
+    parser.add_argument('-group',
+                        required=False,
+                        action='store_true',
+                        help="If enabled, will output a file with breakpoints groupped by position.")
     parser.add_argument('-o',
                         required=True,
                         type=str,

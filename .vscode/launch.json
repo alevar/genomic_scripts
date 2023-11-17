@@ -27,7 +27,10 @@
                 "-i2", "./ris/example/path.sub.blast",
                 "-a1", "./ris/example/host.sub.gtf",
                 "-a2", "./ris/example/path.sub.gtf",
-                "-o", "./ris/example/r"
+                "-o", "./ris/example/r",
+                "-two_pass",
+                "-group",
+                "-exonic",
 	    ],
 	    "console": "integratedTerminal"
         },

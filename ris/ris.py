@@ -44,6 +44,18 @@ class Read:
         self.parse_btop()
         self.btop_to_list()
 
+    def is_reversed(self):
+        return self.sstart > self.send
+    
+    def reverse(self):
+        self.sstart,self.send = self.send,self.sstart
+        self.qstart,self.qend = self.qlen-self.qend+1,self.qlen-self.qstart+1
+        self.btopl = self.btopl[::-1]
+        self.binread = self.binread[::-1]
+        self.donors = [(self.qlen-x[0],x[1]) for x in self.donors]
+        self.acceptors = [(self.qlen-x[0],x[1]) for x in self.acceptors]
+        self.weights = [(self.qlen-x[0],x[1]) for x in self.weights]
+
     def parse_btop(self):
         self.btopl = []
         pattern = re.compile(r'(\d+)|([A-Za-z-]{2})')
@@ -247,6 +259,14 @@ class Binread:
         assert self.read1.qlen is None or self.read1.qlen == self.read2.qlen, "Read lengths do not match."
         assert self.read1.qseqid is None or self.read1.qseqid == self.read2.qseqid, "Read names do not match."
 
+    def is_reversed(self):
+        assert self.read1.is_reversed() == self.read2.is_reversed(), "Segments of the read are not oriented the same way."
+        return self.read1.is_reversed() and self.read2.is_reversed()
+    
+    def reverse(self):
+        self.read1.reverse()
+        self.read2.reverse()
+
     @staticmethod
     def _find_breakpoint(list1, list2):
         max_sum = float('-inf')
@@ -433,6 +453,10 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
     binread = Binread()
     binread.add_read1(m1)
     binread.add_read2(m2)
+
+    # check if read needs to be reversed
+    if binread.is_reversed():
+        binread.reverse()
 
     # add weights from the first pass if available
     weight_pairs = [None]

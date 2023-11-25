@@ -51,7 +51,7 @@ class Read:
         self.sstart,self.send = self.send,self.sstart
         self.qstart,self.qend = self.qlen-self.qend+1,self.qlen-self.qstart+1
         self.btopl = self.btopl[::-1]
-        self.binread = self.binread[::-1]
+        self.btop_to_list()
         self.donors = [(self.qlen-x[0],x[1]) for x in self.donors]
         self.acceptors = [(self.qlen-x[0],x[1]) for x in self.acceptors]
         self.weights = [(self.qlen-x[0],x[1]) for x in self.weights]
@@ -193,6 +193,8 @@ class Read:
                 for i in range(0,b,1):
                     index_genome += 1
                     index_read += 1
+                    if index_read == pos:
+                        return index_genome
             elif isinstance(b, str):
                 if b[0]=="-": # insertion in read
                     index_genome += 1
@@ -478,32 +480,32 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
         binread.reverse()
 
     # add weights from the first pass if available
-    weight_pairs = []
-    cur_max_weight = 1
-    if not pass1_bps is None:
-        binread.read1.load_weights(pass1_bps)
-        binread.read2.load_weights(pass1_bps)
-        for x in binread.read1.weights:
-            if x[1]>cur_max_weight:
-                cur_max_weight = x[1]
-            for y in binread.read2.weights:
-                if y[1]>cur_max_weight:
-                    cur_max_weight = y[1]
+    weight_pairs = [None]
+    # cur_max_weight = 1
+    # if not pass1_bps is None:
+    #     binread.read1.load_weights(pass1_bps)
+    #     binread.read2.load_weights(pass1_bps)
+    #     for x in binread.read1.weights:
+    #         if x[1]>cur_max_weight:
+    #             cur_max_weight = x[1]
+    #         for y in binread.read2.weights:
+    #             if y[1]>cur_max_weight:
+    #                 cur_max_weight = y[1]
 
-                if abs(x-y)<=args.max_dist:
-                    nx = (x[0],x[1],None)
-                    ny = (y[0],y[1],None)
-                    weight_pairs.append((nx,ny))
+    #             if abs(x-y)<=args.max_dist:
+    #                 nx = (x[0],x[1],None)
+    #                 ny = (y[0],y[1],None)
+    #                 weight_pairs.append((nx,ny))
 
-    # normalize weights. Maximum is set by args.max_weight
-    if len(weight_pairs)>0:
-        for wi in range(weight_pairs):
-            # scale w to [1,max_weight]
-            nx = weight_pairs[wi][0]
-            ny = weight_pairs[wi][1]
-            nx[1] = args.max_weight * ((nx[1]-1)/max(1,cur_max_weight-1))
-            ny[1] = args.max_weight * ((ny[1]-1)/max(1,cur_max_weight-1))
-            weight_pairs[wi] = (nx,ny)
+    # # normalize weights. Maximum is set by args.max_weight
+    # if len(weight_pairs)>0:
+    #     for wi in range(weight_pairs):
+    #         # scale w to [1,max_weight]
+    #         nx = weight_pairs[wi][0]
+    #         ny = weight_pairs[wi][1]
+    #         nx[1] = args.max_weight * ((nx[1]-1)/max(1,cur_max_weight-1))
+    #         ny[1] = args.max_weight * ((ny[1]-1)/max(1,cur_max_weight-1))
+    #         weight_pairs[wi] = (nx,ny)
         
     # add donor/acceptor sites
     binread.read1.load_donors(donors1)

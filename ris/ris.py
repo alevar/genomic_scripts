@@ -447,6 +447,25 @@ def match_donor_acceptor(donors,acceptors):
                 res.append((None,y))
     return res
 
+def merge_weights(l1, l2):
+    res = []
+    used_y_idxs = set()
+    
+    for x in l1:
+        r = copy.deepcopy(x)
+        for y in l2:
+            if y[0][0] == x[0][0]:
+                r[1] += y[1]
+                used_y_idxs.add(l2.index(y))
+            if y[1] == x[0]:
+                r[1] += y[0]
+                used_y_idxs.add(l2.index(y))
+            if y[0] == x[1]:
+                r[1] += y[1]
+                used_y_idxs.add(l2.index(y))
+    
+    return res
+
 def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
     # take two mappings of the same read and find the breakpoint between them
 
@@ -459,11 +478,32 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
         binread.reverse()
 
     # add weights from the first pass if available
-    weight_pairs = [None]
+    weight_pairs = []
+    cur_max_weight = 1
     if not pass1_bps is None:
         binread.read1.load_weights(pass1_bps)
         binread.read2.load_weights(pass1_bps)
-        weight_pairs = [(x,y) for x in binread.read1.weights for y in binread.read2.weights]
+        for x in binread.read1.weights:
+            if x[1]>cur_max_weight:
+                cur_max_weight = x[1]
+            for y in binread.read2.weights:
+                if y[1]>cur_max_weight:
+                    cur_max_weight = y[1]
+
+                if abs(x-y)<=args.max_dist:
+                    nx = (x[0],x[1],None)
+                    ny = (y[0],y[1],None)
+                    weight_pairs.append((nx,ny))
+
+    # normalize weights. Maximum is set by args.max_weight
+    if len(weight_pairs)>0:
+        for wi in range(weight_pairs):
+            # scale w to [1,max_weight]
+            nx = weight_pairs[wi][0]
+            ny = weight_pairs[wi][1]
+            nx[1] = args.max_weight * ((nx[1]-1)/max(1,cur_max_weight-1))
+            ny[1] = args.max_weight * ((ny[1]-1)/max(1,cur_max_weight-1))
+            weight_pairs[wi] = (nx,ny)
         
     # add donor/acceptor sites
     binread.read1.load_donors(donors1)
@@ -475,6 +515,8 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
     d1a2 = match_donor_acceptor(binread.read1.donors,binread.read2.acceptors)
     d2a1 = match_donor_acceptor(binread.read2.donors,binread.read1.acceptors)
 
+    # add junctions to the weights. Only if the junction is at the same position as the weight
+
     # now for each combination of donor acceptors
     # we can modify the scores
     # find best brakepoint
@@ -485,7 +527,7 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
         base_binread = copy.deepcopy(binread) # create a master copy of the binread
         if not weight_pair is None:
             base_binread.read1.binread[weight_pair[0][0]] = weight_pair[0][1]
-            base_binread.read1.binread[weight_pair[1][0]] = weight_pair[1][1]
+            base_binread.read2.binread[weight_pair[1][0]] = weight_pair[1][1]
 
         # find unspliced breakpoint first
         tmp = copy.deepcopy(base_binread)

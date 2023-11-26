@@ -95,7 +95,7 @@ class Read:
         for i in range(self.qstart-2,-1,-1):
             genome_pos = self.sstart - (self.qstart - i)
             if genome_pos in sites:
-                res.append((i,sites[genome_pos]))
+                res.append([i,sites[genome_pos]])
         
         index_read = self.qstart-1
         index_genome = self.sstart
@@ -103,26 +103,26 @@ class Read:
         for b in self.btopl:
             if isinstance(b, int):
                 for i in range(0,b,1):
-                    if index_genome+i in sites:
-                        res.append((index_read+i,sites[index_genome+i]))
-                index_genome += b
-                index_read += b
+                    index_genome += 1
+                    index_read += 1
+                    if index_genome in sites:
+                        res.append([index_read,sites[index_genome]])
             elif isinstance(b, str):
                 if b[0]=="-": # insertion in read
                     index_genome += 1
                 elif b[1]=="-": # deletion from read
                     index_read += 1
                 else: # mismatch - treat as a regular match here
-                    if index_genome in sites:
-                        res.append((index_read,sites[index_genome]))
                     index_genome += 1
                     index_read += 1
+                    if index_genome in sites:
+                        res.append([index_read,sites[index_genome]])
 
         # handle the case when the insertion is downstream of the read end position
         for i in range(index_read,self.qlen,1):
             genome_pos = index_genome + (i - index_read)
             if genome_pos in sites:
-                res.append((i,sites[genome_pos]))
+                res.append([i,sites[genome_pos]])
 
         return res
     
@@ -229,13 +229,13 @@ class Binread:
         self.orientation = None # value 1 means that in the RIS read1 is on the left, read2 is on the right. Value 2 means the opposite.
 
     def __str__(self):
-        genome1_read_breakpoint = self.breakpoint if self.orientation==1 else self.breakpoint+1
-        genome2_read_breakpoint = self.breakpoint+1 if self.orientation==1 else self.breakpoint
+        genome1_read_breakpoint = self.breakpoint-1 if self.orientation==1 else self.breakpoint
+        genome2_read_breakpoint = self.breakpoint if self.orientation==1 else self.breakpoint-1
 
         genome1_pos = self.read1.read2genome(genome1_read_breakpoint)
         genome2_pos = self.read2.read2genome(genome2_read_breakpoint)
-        gene1 = self.sj1[1][0] if self.sj1 is not None else "-"
-        gene2 = self.sj2[1][0] if self.sj2 is not None else "-"
+        gene1 = self.sj1[0] if self.sj1 is not None else "-"
+        gene2 = self.sj2[0] if self.sj2 is not None else "-"
         
         return "\t".join([self.read1.qseqid,
                           str(genome1_read_breakpoint),
@@ -284,17 +284,7 @@ class Binread:
         breakpoint = sum(max_indices) // len(max_indices) if max_indices else -1
         binread = list1[:breakpoint]+list2[breakpoint:]
         return [breakpoint,binread,round(max_sum/len(binread),2)]
-
-    def find_breakpoint(self):
-        fw_pos,fw_binread,fw_score = self._find_breakpoint(self.read1.binread, self.read2.binread)
-        rv_pos,rv_binread,rv_score = self._find_breakpoint(self.read2.binread, self.read1.binread)
-        if fw_score > rv_score:
-            self.orientation = 1
-            self.breakpoint,self.binread,self.score,self.genes = fw_pos,fw_binread,fw_score,(None,None)
-        else:
-            self.orientation = 2
-            self.breakpoint,self.binread,self.score,self.genes = rv_pos,rv_binread,rv_score,(None,None)
-
+    
     def break_at(self,pos):
         # returns the result if read is broken at specific position
         # can be used to score breaks at junction sites by explicitely splitting at a given position
@@ -309,44 +299,44 @@ class Binread:
             return [pos,fw_binread,fw_score,1]
         else:
             return [pos,rv_binread,rv_score,2]
-        
-    def add_sj(self,site1,site2):
-        self.sj1 = site1
-        self.sj2 = site2
 
-    def find_spliced_breakpoint(self):
+    def find_breakpoint(self,weight_pair):
         results = []
-
-        # now process with junctions
-        if self.sj1 is not None and self.sj2 is not None and self.sj2[0]-self.sj1[0] == 1:
-            bp = self.break_at(self.sj1[0])
-            bp[2] += 10/len(bp[1]) # add weight of junction
-            bp.append((self.sj1,self.sj2))
-            results.append(bp)
-        elif self.sj1 is not None and self.sj2 is not None and self.sj1[0]-self.sj2[0] == 1:
-            bp = self.break_at(self.sj2[0])
-            bp[2] += 10/len(bp[1]) # add weight of junction
-            bp.append((self.sj2,self.sj1))
-            results.append(bp)
-        elif self.sj1 is not None:
-            bp = self.break_at(self.sj1[0])
-            bp[2] += 3/len(bp[1]) # add weight of junction
-            bp.append((self.sj1,None))
-            results.append(bp)
-        elif self.sj2 is not None:
-            bp = self.break_at(self.sj2[0])
-            bp[2] += 3/len(bp[1]) # add weight of junction
-            bp.append((None,self.sj2))
-            results.append(bp)
-        else:
-            print("unknown clause")
-            sys.exit(1)
         
-        if len(results)==0:
-            self.breakpoint,self.binread,self.score,self.genes,self.orientation = None,None,None,None,None
-        else:
-            self.breakpoint,self.binread,self.score,self.genes,self.orientation = max(results, key=lambda x: x[2])
+        wp1 = weight_pair[0]
+        wp2 = weight_pair[1]
 
+        self.sj1,self.sj2 = None,None
+
+        if wp1[0] is None and wp2[0] is None:
+            fw_pos,fw_binread,fw_score = self._find_breakpoint(self.read1.binread, self.read2.binread)
+            rv_pos,rv_binread,rv_score = self._find_breakpoint(self.read2.binread, self.read1.binread)
+            if fw_score > rv_score:
+                results.append([fw_pos,fw_binread,fw_score,1,(None,None)])
+            else:
+                results.append([rv_pos,rv_binread,rv_score,2,(None,None)])
+        
+        if wp1[0] is not None:
+            self.read1.binread[wp1[0]] = wp1[2]
+        if wp2[0] is not None:
+            self.read2.binread[wp2[0]] = wp2[2]
+
+        if wp1[0] is not None:
+            bp = self.break_at(wp1[0])
+            bp.append((wp1[1],wp2[1]))
+            results.append(bp)
+            self.sj1,self.sj2 = [bp[4][0],bp[4][1]]
+        if wp2[0] is not None:
+            bp = self.break_at(wp2[0])
+            bp.append((wp1[1],wp2[1]))
+            results.append(bp)
+            self.sj1,self.sj2 = [bp[4][0],bp[4][1]]
+
+        if len(results)==0:
+            self.breakpoint,self.binread,self.score,self.orientation,self.genes = None,None,None,None,None
+        else:
+            self.breakpoint,self.binread,self.score,self.orientation,self.genes = max(results, key=lambda x: x[2])
+        
 def extract_genes(fname,exonic=False):
     # parses a GTF file to extract information about all genes
     # returns a dictionary mapping position to the gene name
@@ -437,16 +427,28 @@ def extract_donor_acceptor(fname):
 
     return donors,acceptors
 
-def match_donor_acceptor(donors,acceptors):
+def match_donor_acceptor(donors,acceptors,full_weight,half_weight):
     # finds pairs of donors, acceptors that are adjacent to each other
     res = []
+    if len(donors)==0:
+        for y in acceptors:
+            res.append([[None,None,None],y])
+            res[-1][1].append(half_weight)
+    if len(acceptors)==0:
+        for x in donors:
+            res.append([x,[None,None,None]])
+            res[-1][1].append(half_weight)
     for x in donors:
         for y in acceptors:
             if y[0] - x[0] == 1:
-                res.append((x,y))
+                res.append([x,y])
+                res[-1][0].append(full_weight)
+                res[-1][1].append(full_weight)
             else:
-                res.append((x,None))
-                res.append((None,y))
+                res.append([x,[None,None,None]])
+                res.append([[None,None,None],y])
+                res[-2][0].append(half_weight)
+                res[-1][1].append(half_weight)
     return res
 
 def merge_weights(l1, l2):
@@ -480,32 +482,35 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
         binread.reverse()
 
     # add weights from the first pass if available
-    weight_pairs = [None]
-    # cur_max_weight = 1
-    # if not pass1_bps is None:
-    #     binread.read1.load_weights(pass1_bps)
-    #     binread.read2.load_weights(pass1_bps)
-    #     for x in binread.read1.weights:
-    #         if x[1]>cur_max_weight:
-    #             cur_max_weight = x[1]
-    #         for y in binread.read2.weights:
-    #             if y[1]>cur_max_weight:
-    #                 cur_max_weight = y[1]
+    weight_pairs = [[[None,None,None],[None,None,None]]] # weights are stored as: [[read1_pos,read1_label,read1_weight],[read2_pos,read2_label,read2_weight]]
+    
+    pass1_weight_pairs = []
+    cur_max_weight = 1
+    if not pass1_bps is None:
+        pass1_weight_pairs = []
+        binread.read1.load_weights(pass1_bps)
+        binread.read2.load_weights(pass1_bps)
+        for x in binread.read1.weights:
+            if x[1]>cur_max_weight:
+                cur_max_weight = x[1]
+            for y in binread.read2.weights:
+                if y[1]>cur_max_weight:
+                    cur_max_weight = y[1]
 
-    #             if abs(x-y)<=args.max_dist:
-    #                 nx = (x[0],x[1],None)
-    #                 ny = (y[0],y[1],None)
-    #                 weight_pairs.append((nx,ny))
+                if abs(x[0]-y[0])<=args.max_dist:
+                    nx = [x[0],x[1],[None,None,None],[None,None,None]]
+                    ny = [y[0],y[1],[None,None,None],[None,None,None]]
+                    pass1_weight_pairs.append([nx,ny])
 
-    # # normalize weights. Maximum is set by args.max_weight
-    # if len(weight_pairs)>0:
-    #     for wi in range(weight_pairs):
-    #         # scale w to [1,max_weight]
-    #         nx = weight_pairs[wi][0]
-    #         ny = weight_pairs[wi][1]
-    #         nx[1] = args.max_weight * ((nx[1]-1)/max(1,cur_max_weight-1))
-    #         ny[1] = args.max_weight * ((ny[1]-1)/max(1,cur_max_weight-1))
-    #         weight_pairs[wi] = (nx,ny)
+        # normalize weights. Maximum is set by args.max_weight
+        if pass1_weight_pairs is not [[None,None,None],[None,None,None]]:
+            for wi in range(len(pass1_weight_pairs)):
+                # scale w to [1,max_weight]
+                nx = pass1_weight_pairs[wi][0]
+                ny = pass1_weight_pairs[wi][1]
+                nx[1] = args.max_weight * ((nx[1]-1)/max(1,cur_max_weight-1))
+                ny[1] = args.max_weight * ((ny[1]-1)/max(1,cur_max_weight-1))
+                pass1_weight_pairs[wi] = (nx,ny)
         
     # add donor/acceptor sites
     binread.read1.load_donors(donors1)
@@ -514,10 +519,14 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
     binread.read2.load_acceptors(acceptors2)
 
     # match junctions:
-    d1a2 = match_donor_acceptor(binread.read1.donors,binread.read2.acceptors)
-    d2a1 = match_donor_acceptor(binread.read2.donors,binread.read1.acceptors)
+    d1a2 = match_donor_acceptor(binread.read1.donors,binread.read2.acceptors,args.full_weight,args.half_weight)
+    d2a1 = match_donor_acceptor(binread.read2.donors,binread.read1.acceptors,args.full_weight,args.half_weight)
 
-    # add junctions to the weights. Only if the junction is at the same position as the weight
+    # add d1a2 and d2a1 to the weights
+    for pair in d1a2:
+        weight_pairs.append([pair[0],pair[1]])
+    for pair in d2a1:
+        weight_pairs.append([pair[1],pair[0]])
 
     # now for each combination of donor acceptors
     # we can modify the scores
@@ -527,28 +536,9 @@ def process(m1,m2,donors1,acceptors1,donors2,acceptors2,args,pass1_bps=None):
 
     for weight_pair in weight_pairs:
         base_binread = copy.deepcopy(binread) # create a master copy of the binread
-        if not weight_pair is None:
-            base_binread.read1.binread[weight_pair[0][0]] = weight_pair[0][1]
-            base_binread.read2.binread[weight_pair[1][0]] = weight_pair[1][1]
 
-        # find unspliced breakpoint first
-        tmp = copy.deepcopy(base_binread)
-        tmp.find_breakpoint()
-        results.append(tmp)
-
-        for sj in d1a2:
-            tmp = copy.deepcopy(base_binread)
-            tmp.add_sj(sj[0],sj[1])
-            tmp.find_spliced_breakpoint()
-            if not tmp.breakpoint is None:
-                results.append(tmp)
-
-        for sj in d2a1:
-            tmp = copy.deepcopy(base_binread)
-            tmp.add_sj(sj[1],sj[0])
-            tmp.find_spliced_breakpoint()
-            if not tmp.breakpoint is None:
-                results.append(tmp)
+        base_binread.find_breakpoint(weight_pair)
+        results.append(base_binread)
 
     if len(results)==0:
         return None
@@ -799,6 +789,26 @@ def main(args):
                         required=True,
                         type=str,
                         help="Output file.")
+    parser.add_argument('-max_dist',
+                        required=False,
+                        type=int,
+                        default=5,
+                        help="Maximum distance between breakpoints of the two segments. Default: 5.")
+    parser.add_argument('-max_weight',
+                        required=False,
+                        type=int,
+                        default=5,
+                        help="Maximum weight of a breakpoint when biasing the 2nd pass. Default: 5.")
+    parser.add_argument('-full_weight',
+                        required=False,
+                        type=int,
+                        default=5,
+                        help="Weight of a breakpoint that matches donor and acceptor. Default: 5.")
+    parser.add_argument('-half_weight',
+                        required=False,
+                        type=int,
+                        default=3,
+                        help="Weight of a breakpoint that matches either donor or acceptor. Default: 3.")
     
     parser.set_defaults(func=run)
     args=parser.parse_args()

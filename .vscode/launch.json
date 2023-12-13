@@ -69,6 +69,74 @@
 	        "console": "integratedTerminal"
         },
         {
+            "name": "ris AY69_A4p3_GIMAP7.R1",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/AY69_A4p3_GIMAP7.R1.host.blastn.6",
+                "-i2", "./ris/example/AY69_A4p3_GIMAP7.R1.path.blastn.6",
+                "-a1", "./ris/example/host.test1.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/AY69_A4p3_GIMAP7.R1",
+                "-two_pass",
+                "-group",
+                "-exonic",
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
+            "name": "ris AY69_E4p5_LTA.R1",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/AY69_E4p5_LTA.R1.host.blastn.6",
+                "-i2", "./ris/example/AY69_E4p5_LTA.R1.path.blastn.6",
+                "-a1", "./ris/example/LTA.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/AY69_E4p5_LTA.R1",
+                "-two_pass",
+                "-group",
+                "-exonic",
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
+            "name": "ris AY69_G12p2_INPP4A.R1",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/AY69_G12p2_INPP4A.R1.host.blastn.6",
+                "-i2", "./ris/example/AY69_G12p2_INPP4A.R1.path.blastn.6",
+                "-a1", "./ris/example/INPP4A.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/AY69_G12p2_INPP4A.R1",
+                "-two_pass",
+                "-group",
+                "-exonic",
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
+            "name": "ris AY69_G12p2_INPP4A.R2",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/AY69_G12p2_INPP4A.R2.host.blastn.6",
+                "-i2", "./ris/example/AY69_G12p2_INPP4A.R2.path.blastn.6",
+                "-a1", "./ris/example/INPP4A.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/AY69_G12p2_INPP4A.R2",
+                "-two_pass",
+                "-group",
+                "-exonic",
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
             "name": "Python: subset_tree",
             "type": "python",
             "request": "launch",

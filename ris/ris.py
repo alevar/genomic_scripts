@@ -312,9 +312,9 @@ class Binread:
             pos,binread,score = self._find_breakpoint(self.read1.binread, self.read2.binread,orientation)
             results.append([pos,binread,score,(None,None)])
         
-        if wp1[0] is not None:
+        if wp1[0] is not None and wp1[0]<len(self.read1.binread):
             self.read1.binread[wp1[0]] = wp1[2]
-        if wp2[0] is not None:
+        if wp2[0] is not None and wp2[0]<len(self.read2.binread):
             self.read2.binread[wp2[0]] = wp2[2]
 
         if wp1[0] is not None:

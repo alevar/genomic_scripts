@@ -577,11 +577,11 @@ def ris(args,in1_fname,in2_fname,out_fname,gene_trees1,gene_trees2,donors1,accep
                 found_genes2 = set()
                 for seqid,genes in gene_trees1.items():
                     inter = genes.overlap(it1)
-                    if len(inter)>0 and seqid==res.read1.sseqid:
+                    if len(inter)>0 and seqid[0]==res.read1.sseqid:
                         found_genes1.update([x[2] for x in inter])
                 for seqid,genes in gene_trees2.items():
                     inter = genes.overlap(it2)
-                    if len(inter)>0 and seqid==res.read2.sseqid:
+                    if len(inter)>0 and seqid[0]==res.read2.sseqid:
                         found_genes2.update([x[2] for x in inter])
                 
                 if len(found_genes1)==0:

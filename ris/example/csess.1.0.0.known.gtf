@@ -1,0 +1,172 @@
+##gff-version 2
+##sequence-region M33262.1 1 10535
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=11723
+## 5' LTR
+M33262.1	Genbank	region	1	10535	.	+	.	id "M33262.1:1..10535"; dbxref "taxon:11723"; gb-acronym "SIV"; gbkey "Src"; isolate "239"; mol_type "genomic RNA";
+M33262.1	Genbank	long_terminal_repeat	257	1074	.	+	.	id "id-M33262.1:257..1074"; Note "5'LTR"; gbkey "LTR";
+M33262.1	Genbank	long_terminal_repeat	257	773	.	+	.	id "id-M33262.1:257..773"; Note "U3"; gbkey "LTR";
+M33262.1	Genbank	repeat_region	774	950	.	+	.	id "id-M33262.1:774..950"; Note "R"; gbkey "repeat_region";
+## gag
+M33262.1	StringTie	transcript	244	10535	.	+	.	transcript_id "gag.1"; gene_id "gag"; gene_name "gag"; assembly_id "ALL_00000219"; num_samples "13"; notes "manually introduced from assembly"; dbxref "NCBI_GP:AAA47632.1"; cds_id "AAA47632.1"; product "gag polyprotein";
+M33262.1	StringTie	exon	244	10535	.	+	.	transcript_id "gag.1"; gene_id "gag"; exon_number "1";
+M33262.1	Genbank	CDS	1309	2841	.	+	0	transcript_id "gag.1"; gene_id "gag";
+## tat
+M33262.1	StringTie	transcript	244	10535	.	+	.	transcript_id "tat.1"; gene_id "tat"; gene_name "tat"; assembly_id "ALL_00000016"; num_samples "16"; cds_id "cds-AAA47630.1"; dbxref "NCBI_GP:AAA47630.1"; product "tat protein";
+M33262.1	StringTie	exon	244	1241	.	+	.	transcript_id "tat.1"; gene_id "tat"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	6556	6853	.	+	.	transcript_id "tat.1"; gene_id "tat"; acceptor "SA3"; donor "SD4"; exon_number "2";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "tat.1"; gene_id "tat"; acceptor "SA7"; exon_number "3";
+M33262.1	StringTie	CDS	6558	6853	.	+	.	transcript_id "tat.1"; gene_id "tat";
+M33262.1	StringTie	CDS	9062	9158	.	+	.	transcript_id "tat.1"; gene_id "tat";
+M33262.1	StringTie	transcript	255	10483	.	+	.	transcript_id "tat.5"; gene_id "tat"; gene_name "tat"; assembly_id "ALL_00000066"; num_samples "4"; notes "manually annotated CDS matching the unspliced tat protein from HXB2";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "tat.5"; gene_id "tat"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "tat.5"; gene_id "tat"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	6556	10483	.	+	.	transcript_id "tat.5"; gene_id "tat"; acceptor "SA3"; exon_number "3";
+M33262.1	StringTie	CDS	6558	9158	.	+	.	transcript_id "tat.5"; gene_id "tat";
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "tat.3"; gene_id "tat"; gene_name "tat"; assembly_id "ALL_00000124"; num_samples "11"; cds_id "cds-AAA47630.1"; dbxref "NCBI_GP:AAA47630.1"; product "tat protein";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "tat.3"; gene_id "tat"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "tat.3"; gene_id "tat"; acceptor "SA2"; donor "SD3"; exon_number "2";
+M33262.1	StringTie	exon	6556	6853	.	+	.	transcript_id "tat.3"; gene_id "tat"; acceptor "SA3"; donor "SD4"; exon_number "3";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "tat.3"; gene_id "tat"; acceptor "SA7"; exon_number "4";
+M33262.1	StringTie	CDS	6558	6853	.	+	.	transcript_id "tat.3"; gene_id "tat";
+M33262.1	StringTie	CDS	9062	9158	.	+	.	transcript_id "tat.3"; gene_id "tat";
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "tat.2"; gene_id "tat"; gene_name "tat"; assembly_id "ALL_00000019"; num_samples "2"; cds_id "cds-AAA47630.1"; dbxref "NCBI_GP:AAA47630.1"; product "tat protein";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "tat.2"; gene_id "tat"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "tat.2"; gene_id "tat"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	6556	6853	.	+	.	transcript_id "tat.2"; gene_id "tat"; acceptor "SA3"; donor "SD4"; exon_number "3";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "tat.2"; gene_id "tat"; acceptor "SA7"; exon_number "4";
+M33262.1	StringTie	CDS	6558	6853	.	+	.	transcript_id "tat.2"; gene_id "tat";
+M33262.1	StringTie	CDS	9062	9158	.	+	.	transcript_id "tat.2"; gene_id "tat";
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "tat.4"; gene_id "tat"; gene_name "tat"; assembly_id "ALL_00000021"; num_samples "3"; cds_id "cds-AAA47630.1"; dbxref "NCBI_GP:AAA47630.1"; product "tat protein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "tat.4"; gene_id "tat"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "tat.4"; gene_id "tat"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "tat.4"; gene_id "tat"; acceptor "SA2"; donor "SD3"; exon_number "3";
+M33262.1	StringTie	exon	6556	6853	.	+	.	transcript_id "tat.4"; gene_id "tat"; acceptor "SA3"; donor "SD4"; exon_number "4";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "tat.4"; gene_id "tat"; acceptor "SA7"; exon_number "5";
+M33262.1	StringTie	CDS	6558	6853	.	+	.	transcript_id "tat.4"; gene_id "tat";
+M33262.1	StringTie	CDS	9062	9158	.	+	.	transcript_id "tat.4"; gene_id "tat";
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "tat.6"; gene_id "tat"; gene_name "tat"; assembly_id "ALL_00000154"; num_samples "6"; notes "manually annotated CDS matching the unspliced tat protein from HXB2";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "tat.6"; gene_id "tat"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	6556	10535	.	+	.	transcript_id "tat.6"; gene_id "tat"; acceptor "SA3"; exon_number "2";
+M33262.1	StringTie	CDS	6558	9158	.	+	.	transcript_id "tat.6"; gene_id "tat";
+## env
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "env.5"; gene_id "env"; gene_name "env"; assembly_id "ALL_00000154"; num_samples "6"; cds_id "cds-AAA47637.1"; dbxref "NCBI_GP:AAA47637.1"; product "env polyprotein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "env.5"; gene_id "env"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	6556	10535	.	+	.	transcript_id "env.5"; gene_id "env"; acceptor "SA3"; exon_number "2";
+M33262.1	StringTie	CDS	6860	9499	.	+	.	transcript_id "env.5"; gene_id "env";
+M33262.1	StringTie	transcript	244	10535	.	+	.	transcript_id "env.3"; gene_id "env"; gene_name "env"; assembly_id "ALL_00000013"; num_samples "24"; cds_id "cds-AAA47637.1"; dbxref "NCBI_GP:AAA47637.1"; product "env polyprotein";
+M33262.1	StringTie	exon	244	1241	.	+	.	transcript_id "env.3"; gene_id "env"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	6769	10535	.	+	.	transcript_id "env.3"; gene_id "env"; acceptor "SA5"; exon_number "2";
+M33262.1	StringTie	CDS	6860	9499	.	+	.	transcript_id "env.3"; gene_id "env";
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "env.2"; gene_id "env"; gene_name "env"; assembly_id "ALL_00000097"; num_samples "14"; cds_id "cds-AAA47637.1"; dbxref "NCBI_GP:AAA47637.1"; product "env polyprotein";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "env.2"; gene_id "env"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "env.2"; gene_id "env"; acceptor "SA2"; donor "SD3"; exon_number "2";
+M33262.1	StringTie	exon	6769	10535	.	+	.	transcript_id "env.2"; gene_id "env"; acceptor "SA5"; exon_number "3";
+M33262.1	StringTie	CDS	6860	9499	.	+	.	transcript_id "env.2"; gene_id "env";
+M33262.1	StringTie	transcript	256	10483	.	+	.	transcript_id "env.1"; gene_id "env"; gene_name "env"; assembly_id "ALL_00000096"; num_samples "8"; cds_id "cds-AAA47637.1"; dbxref "NCBI_GP:AAA47637.1"; product "env polyprotein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "env.1"; gene_id "env"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "env.1"; gene_id "env"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	6769	10483	.	+	.	transcript_id "env.1"; gene_id "env"; acceptor "SA5"; exon_number "3";
+M33262.1	StringTie	CDS	6860	9499	.	+	.	transcript_id "env.1"; gene_id "env";
+## env/vpu
+M33262.1	StringTie	transcript	256	10483	.	+	.	transcript_id "env/vpu.1"; gene_id "env/vpu"; gene_name "env/vpu"; assembly_id "ALL_00000252"; num_samples "1";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "env/vpu.1"; gene_id "env/vpu"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "env/vpu.1"; gene_id "env/vpu"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "env/vpu.1"; gene_id "env/vpu"; acceptor "SA2"; donor "SD3"; exon_number "3";
+M33262.1	StringTie	exon	6628	10483	.	+	.	transcript_id "env/vpu.1"; gene_id "env/vpu"; acceptor "SA4"; exon_number "4";
+M33262.1	StringTie	transcript	256	7243	.	+	.	transcript_id "env/vpu.2"; gene_id "env/vpu"; gene_name "env/vpu"; assembly_id "ALL_00000128"; num_samples "2";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "env/vpu.2"; gene_id "env/vpu"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "env/vpu.2"; gene_id "env/vpu"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "env/vpu.2"; gene_id "env/vpu"; acceptor "SA2"; donor "SD3"; exon_number "3";
+M33262.1	StringTie	exon	6769	7243	.	+	.	transcript_id "env/vpu.2"; gene_id "env/vpu"; acceptor "SA5"; exon_number "4";
+## vpr
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "vpr.1"; gene_id "vpr"; gene_name "vpr"; assembly_id "ALL_00000027"; num_samples "12"; cds_id "cds-AAA47636.1"; dbxref "NCBI_GP:AAA47636.1"; product "vpR protein";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "vpr.1"; gene_id "vpr"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5951	6853	.	+	.	transcript_id "vpr.1"; gene_id "vpr"; acceptor "SA2"; donor "SD4"; exon_number "2";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "vpr.1"; gene_id "vpr"; acceptor "SA7"; exon_number "3";
+M33262.1	StringTie	CDS	6407	6712	.	+	.	transcript_id "vpr.1"; gene_id "vpr";
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "vpr.2"; gene_id "vpr"; gene_name "vpr"; assembly_id "ALL_00000188"; num_samples "4"; cds_id "cds-AAA47636.1"; dbxref "NCBI_GP:AAA47636.1"; product "vpR protein";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "vpr.2"; gene_id "vpr"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "vpr.2"; gene_id "vpr"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	5951	6853	.	+	.	transcript_id "vpr.2"; gene_id "vpr"; acceptor "SA2"; donor "SD4"; exon_number "3";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "vpr.2"; gene_id "vpr"; acceptor "SA7"; exon_number "4";
+M33262.1	StringTie	CDS	6407	6712	.	+	.	transcript_id "vpr.2"; gene_id "vpr";
+M33262.1	StringTie	transcript	256	10413	.	+	.	transcript_id "vpr.4"; gene_id "vpr"; gene_name "vpr"; assembly_id "ALL_00000127"; num_samples "7"; cds_id "cds-AAA47636.1"; dbxref "NCBI_GP:AAA47636.1"; product "vpR protein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "vpr.4"; gene_id "vpr"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "vpr.4"; gene_id "vpr"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	5951	10413	.	+	.	transcript_id "vpr.4"; gene_id "vpr"; acceptor "SA2"; exon_number "3";
+M33262.1	StringTie	CDS	6407	6712	.	+	.	transcript_id "vpr.4"; gene_id "vpr";
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "vpr.3"; gene_id "vpr"; gene_name "vpr"; assembly_id "ALL_00000001"; num_samples "18"; cds_id "cds-AAA47636.1"; dbxref "NCBI_GP:AAA47636.1"; product "vpR protein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "vpr.3"; gene_id "vpr"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5951	10535	.	+	.	transcript_id "vpr.3"; gene_id "vpr"; acceptor "SA2"; exon_number "2";
+M33262.1	StringTie	CDS	6407	6712	.	+	.	transcript_id "vpr.3"; gene_id "vpr";
+## rev
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "rev.7"; gene_id "rev"; gene_name "rev"; assembly_id "ALL_00000028"; num_samples "3"; cds_id "cds-AAA47631.1"; dbxref "NCBI_GP:AAA47631.1"; product "rev protein";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "rev.7"; gene_id "rev"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "rev.7"; gene_id "rev"; acceptor "SA2"; donor "SD3"; exon_number "2";
+M33262.1	StringTie	exon	6628	6853	.	+	.	transcript_id "rev.7"; gene_id "rev"; acceptor "SA4"; donor "SD4"; exon_number "3";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "rev.7"; gene_id "rev"; acceptor "SA7"; exon_number "4";
+M33262.1	StringTie	CDS	6784	6853	.	+	.	transcript_id "rev.7"; gene_id "rev";
+M33262.1	StringTie	CDS	9062	9315	.	+	.	transcript_id "rev.7"; gene_id "rev";
+M33262.1	StringTie	transcript	256	10483	.	+	.	transcript_id "rev.6"; gene_id "rev"; gene_name "rev"; assembly_id "ALL_00000240"; num_samples "1"; cds_id "cds-AAA47631.1"; dbxref "NCBI_GP:AAA47631.1"; product "rev protein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "rev.6"; gene_id "rev"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "rev.6"; gene_id "rev"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	6628	6853	.	+	.	transcript_id "rev.6"; gene_id "rev"; acceptor "SA4"; donor "SD4"; exon_number "3";
+M33262.1	StringTie	exon	9062	10483	.	+	.	transcript_id "rev.6"; gene_id "rev"; acceptor "SA7"; exon_number "4";
+M33262.1	StringTie	CDS	6784	6853	.	+	.	transcript_id "rev.6"; gene_id "rev";
+M33262.1	StringTie	CDS	9062	9315	.	+	.	transcript_id "rev.6"; gene_id "rev";
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "rev.8"; gene_id "rev"; gene_name "rev"; assembly_id "ALL_00000270"; num_samples "1"; cds_id "cds-AAA47631.1"; dbxref "NCBI_GP:AAA47631.1"; product "rev protein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "rev.8"; gene_id "rev"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "rev.8"; gene_id "rev"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "rev.8"; gene_id "rev"; acceptor "SA2"; donor "SD3"; exon_number "3";
+M33262.1	StringTie	exon	6628	6853	.	+	.	transcript_id "rev.8"; gene_id "rev"; acceptor "SA4"; donor "SD4"; exon_number "4";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "rev.8"; gene_id "rev"; acceptor "SA7"; exon_number "5";
+M33262.1	StringTie	CDS	6784	6853	.	+	.	transcript_id "rev.8"; gene_id "rev";
+M33262.1	StringTie	CDS	9062	9315	.	+	.	transcript_id "rev.8"; gene_id "rev";
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "rev.1"; gene_id "rev"; gene_name "rev"; assembly_id "ALL_00000263"; num_samples "4"; cds_id "cds-AAA47631.1"; dbxref "NCBI_GP:AAA47631.1"; product "rev protein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "rev.1"; gene_id "rev"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	6628	6853	.	+	.	transcript_id "rev.1"; gene_id "rev"; acceptor "SA4"; donor "SD4"; exon_number "2";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "rev.1"; gene_id "rev"; acceptor "SA7"; exon_number "3";
+M33262.1	StringTie	CDS	6784	6853	.	+	.	transcript_id "rev.1"; gene_id "rev";
+M33262.1	StringTie	CDS	9062	9315	.	+	.	transcript_id "rev.1"; gene_id "rev";
+## vif
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "vif.2"; gene_id "vif"; gene_name "vif"; assembly_id "ALL_00000048"; num_samples "14"; cds_id "cds-AAA47634.1"; dbxref "NCBI_GP:AAA47634.1"; product "vif protein";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "vif.2"; gene_id "vif"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	10535	.	+	.	transcript_id "vif.2"; gene_id "vif"; acceptor "SA1"; exon_number "2";
+M33262.1	StringTie	CDS	5596	6240	.	+	.	transcript_id "vif.2"; gene_id "vif";
+## nef
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "nef.4"; gene_id "nef"; gene_name "nef"; assembly_id "ALL_00000131"; num_samples "12"; cds_id "cds-AAA47638.1"; dbxref "NCBI_GP:AAA47638.1"; product "nef protein (premature termination). Alternative translation extends to 10124"; pseudo "true";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "nef.4"; gene_id "nef"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "nef.4"; gene_id "nef"; acceptor "SA2"; donor "SD3"; exon_number "2";
+M33262.1	StringTie	exon	6769	6853	.	+	.	transcript_id "nef.4"; gene_id "nef"; acceptor "SA5"; donor "SD4"; exon_number "3";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "nef.4"; gene_id "nef"; acceptor "SA7"; exon_number "4";
+M33262.1	StringTie	CDS	9333	9611	.	+	.	transcript_id "nef.4"; gene_id "nef";
+M33262.1	StringTie	transcript	255	10535	.	+	.	transcript_id "nef.2"; gene_id "nef"; gene_name "nef"; assembly_id "ALL_00000040"; num_samples "29"; cds_id "cds-AAA47638.1"; dbxref "NCBI_GP:AAA47638.1"; product "nef protein (premature termination). Alternative translation extends to 10124"; pseudo "true";
+M33262.1	StringTie	exon	255	1241	.	+	.	transcript_id "nef.2"; gene_id "nef"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	6769	6853	.	+	.	transcript_id "nef.2"; gene_id "nef"; acceptor "SA5"; donor "SD4"; exon_number "2";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "nef.2"; gene_id "nef"; acceptor "SA7"; exon_number "3";
+M33262.1	StringTie	CDS	9333	9611	.	+	.	transcript_id "nef.2"; gene_id "nef";
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "nef.5"; gene_id "nef"; gene_name "nef"; assembly_id "ALL_00000030"; num_samples "4"; cds_id "cds-AAA47638.1"; dbxref "NCBI_GP:AAA47638.1"; product "nef protein (premature termination). Alternative translation extends to 10124"; pseudo "true";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "nef.5"; gene_id "nef"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "nef.5"; gene_id "nef"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	5951	6027	.	+	.	transcript_id "nef.5"; gene_id "nef"; acceptor "SA2"; donor "SD3"; exon_number "3";
+M33262.1	StringTie	exon	6769	6853	.	+	.	transcript_id "nef.5"; gene_id "nef"; acceptor "SA5"; donor "SD4"; exon_number "4";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "nef.5"; gene_id "nef"; acceptor "SA7"; exon_number "5";
+M33262.1	StringTie	CDS	9333	9611	.	+	.	transcript_id "nef.5"; gene_id "nef";
+M33262.1	StringTie	transcript	256	10535	.	+	.	transcript_id "nef.3"; gene_id "nef"; gene_name "nef"; assembly_id "ALL_00000031"; num_samples "3"; cds_id "cds-AAA47638.1"; dbxref "NCBI_GP:AAA47638.1"; product "nef protein (premature termination). Alternative translation extends to 10124"; pseudo "true";
+M33262.1	StringTie	exon	256	1241	.	+	.	transcript_id "nef.3"; gene_id "nef"; donor "SD1"; exon_number "1";
+M33262.1	StringTie	exon	5468	5540	.	+	.	transcript_id "nef.3"; gene_id "nef"; acceptor "SA1"; donor "SD2"; exon_number "2";
+M33262.1	StringTie	exon	6769	6853	.	+	.	transcript_id "nef.3"; gene_id "nef"; acceptor "SA5"; donor "SD4"; exon_number "3";
+M33262.1	StringTie	exon	9062	10535	.	+	.	transcript_id "nef.3"; gene_id "nef"; acceptor "SA7"; exon_number "4";
+M33262.1	StringTie	CDS	9333	9611	.	+	.	transcript_id "nef.3"; gene_id "nef";
+## 3' LTR
+M33262.1	Genbank	long_terminal_repeat	9718	10535	.	+	.	id "id-M33262.1:9718..10535"; note "3' LTR"; gbkey "LTR";
+M33262.1	Genbank	long_terminal_repeat	9718	10234	.	+	.	id "id-M33262.1:9718..10234"; note "U3"; gbkey "LTR";
+M33262.1	Genbank	repeat_region	10235	10411	.	+	.	id "id-M33262.1:10235..10411"; note "R"; gbkey "repeat_region";
+M33262.1	Genbank	region	10388	10393	.	+	.	id "id-M33262.1:10388..10393"; gbkey "polyA_signal";
+M33262.1	Genbank	long_terminal_repeat	10412	10535	.	+	.	id "id-M33262.1:10412..10535"; note "U5"; gbkey "LTR";
+
+
+
+
+
+

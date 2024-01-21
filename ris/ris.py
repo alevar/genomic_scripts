@@ -242,6 +242,20 @@ class Binread:
         genome2_pos = self.read2.read2genome(genome2_read_breakpoint)
         gene1 = self.sj1[0] if self.sj1 is not None else "-"
         gene2 = self.sj2[0] if self.sj2 is not None else "-"
+
+        genes1 = []
+        for gene in sorted(list(self.genes[0])):
+            if gene == "-":
+                continue
+            genes1.append(gene[0]+":"+gene[1])
+        genes1 = ";".join(genes1) if len(genes1)>0 else "-"
+
+        genes2 = []
+        for gene in sorted(list(self.genes[1])):
+            if gene == "-":
+                continue
+            genes2.append(gene[0]+":"+gene[1])
+        genes2 = ";".join(genes2) if len(genes2)>0 else "-"
         
         return "\t".join([self.read1.qseqid,
                           str(genome1_read_breakpoint),
@@ -253,8 +267,8 @@ class Binread:
                           str(self.score),
                           gene1,
                           gene2,
-                          ";".join(sorted(list(self.genes[0]))),
-                          ";".join(sorted(list(self.genes[1]))),
+                          genes1,
+                          genes2,
                           "".join([str(x) for x in self.binread])])
                
 
@@ -333,7 +347,7 @@ class Binread:
         else:
             self.breakpoint,self.binread,self.score,self.genes = max(results, key=lambda x: x[2])
         
-def extract_genes(fname,exonic=False):
+def extract_genes(fname):
     # parses a GTF file to extract information about all genes
     # returns a dictionary mapping position to the gene name
 
@@ -341,7 +355,6 @@ def extract_genes(fname,exonic=False):
     cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
     subprocess.call(cmd)
 
-    genes = {} # gene name to start-end coordinate
     gene_trees = {}
 
     # iterate over lines of gtf to extract the genes
@@ -350,24 +363,10 @@ def extract_genes(fname,exonic=False):
             if line[0]=="#":
                 continue
             lcs = line.strip().split("\t")
-            if exonic:
-                if lcs[2] == "exon":
-                    gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
+            if lcs[2] in ["exon", "transcript"]:
+                gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
 
-                    gene_trees.setdefault((lcs[0],lcs[6]),IntervalTree()).addi(int(lcs[3]),int(lcs[4])+1, gid) # +1 because intervaltree is exclusive on the right
-            else:
-                if lcs[2] == "transcript":
-                    gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
-                    genes.setdefault(gid,[lcs[0],lcs[6],int(lcs[3]),int(lcs[4])+1])
-                    # update start to minimum of current and recorded
-                    genes[gid][2] = min(genes[gid][2],int(lcs[3]))
-                    # update end to maximum of current and recorded
-                    genes[gid][3] = max(genes[gid][3],int(lcs[4])+1)
-
-    if not exonic:
-        # move to interval tree
-        for gid,coords in genes.items():
-            gene_trees.setdefault((coords[0],coords[1]),IntervalTree()).addi(coords[2], coords[3], gid)
+                gene_trees.setdefault((lcs[0],lcs[6]),IntervalTree()).addi(int(lcs[3]),int(lcs[4])+1, (gid,lcs[2])) # +1 because intervaltree is exclusive on the right
 
     if os.path.exists("tmp.gtf"):
         os.remove("tmp.gtf")
@@ -662,8 +661,8 @@ def group_breakpoints(args,in_fname,outFP):
     return
 
 def run(args):
-    gene_trees1 = extract_genes(args.a1,args.exonic)
-    gene_trees2 = extract_genes(args.a2,args.exonic)
+    gene_trees1 = extract_genes(args.a1)
+    gene_trees2 = extract_genes(args.a2)
     donors1,acceptors1 = extract_donor_acceptor(args.a1)
     donors2,acceptors2 = extract_donor_acceptor(args.a2)
 
@@ -733,10 +732,6 @@ def main(args):
                         required=True,
                         type=str,
                         help="GTF file containing gene annotations for genome #2.")
-    parser.add_argument('-exonic',
-                        required=False,
-                        action='store_true',
-                        help="Only consider exonic regions when extracting gene coordinates. Mapped coordinates of the read are matched against the gene coordinate set and if any position overlaps - the match will be reported. By default, exonic and intronic positions are considered. If this flag is enabled and read is contained entirely within an intron - it will not be reported as a match for the gene.")
     parser.add_argument('-two_pass',
                         required=False,
                         action='store_true',

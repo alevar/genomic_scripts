@@ -30,7 +30,6 @@
                 "-o", "./ris/example/r",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },
@@ -47,7 +46,6 @@
                 "-o", "./ris/example/test1",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },
@@ -64,7 +62,6 @@
                 "-o", "./ris/example/AY69_A4p3_GIMAP7.R2",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },
@@ -81,7 +78,6 @@
                 "-o", "./ris/example/AY69_A4p3_GIMAP7.R1",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },
@@ -98,7 +94,6 @@
                 "-o", "./ris/example/AY69_E4p5_LTA.R1",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },
@@ -115,7 +110,6 @@
                 "-o", "./ris/example/AY69_G12p2_INPP4A.R1",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },
@@ -132,7 +126,6 @@
                 "-o", "./ris/example/AY69_G12p2_INPP4A.R2",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },
@@ -149,7 +142,6 @@
                 "-o", "./ris/example/AY69_G11p7_DAZAP1.R1",
                 "-two_pass",
                 "-group",
-                "-exonic",
 	        ],
 	        "console": "integratedTerminal"
         },

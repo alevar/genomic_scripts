@@ -243,19 +243,35 @@ class Binread:
         gene1 = self.sj1[0] if self.sj1 is not None else "-"
         gene2 = self.sj2[0] if self.sj2 is not None else "-"
 
-        genes1 = []
+        # parse genes. for every gene if both exonic and intronic labels exist - select exonic
+        genes1 = dict()
         for gene in sorted(list(self.genes[0])):
             if gene == "-":
                 continue
-            genes1.append(gene[0]+":"+gene[1])
+            genes1.setdefault(gene[0],"")
+            if gene[1] == "exon":
+                genes1[gene[0]] = "exon"
+            elif gene[1] == "transcript" and genes1[gene[0]] != "exon":
+                genes1[gene[0]] = "intron"
+            else:
+                continue
+        genes1 = [x[0]+":"+x[1] for x in genes1.items()]
         genes1 = ";".join(genes1) if len(genes1)>0 else "-"
 
-        genes2 = []
+        genes2 = dict()
         for gene in sorted(list(self.genes[1])):
             if gene == "-":
                 continue
-            genes2.append(gene[0]+":"+gene[1])
+            genes2.setdefault(gene[0],"")
+            if gene[1] == "exon":
+                genes2[gene[0]] = "exon"
+            elif gene[1] == "transcript" and genes2[gene[0]] != "exon":
+                genes2[gene[0]] = "intron"
+            else:
+                continue
+        genes2 = [x[0]+":"+x[1] for x in genes2.items()]
         genes2 = ";".join(genes2) if len(genes2)>0 else "-"
+
         
         return "\t".join([self.read1.qseqid,
                           str(genome1_read_breakpoint),

@@ -8,6 +8,7 @@ import sys
 import copy
 import random
 import shutil
+import tempfile
 import argparse
 import subprocess
 from intervaltree import Interval, IntervalTree
@@ -397,13 +398,17 @@ def extract_genes(fname):
     # returns a dictionary mapping position to the gene name
 
     # run gffread to standardize
-    cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
+    tmp_fname = None
+    with tempfile.NamedTemporaryFile(suffix=".gtf", delete=False) as tmp_file:
+        tmp_fname = tmp_file.name
+
+    cmd = ["gffread","-T","-F","-o",tmp_fname,fname]
     subprocess.call(cmd)
 
     gene_trees = {}
 
     # iterate over lines of gtf to extract the genes
-    with open("tmp.gtf","r") as inFP:
+    with open(tmp_fname,"r") as inFP:
         for line in inFP:
             if line[0]=="#":
                 continue
@@ -413,8 +418,8 @@ def extract_genes(fname):
 
                 gene_trees.setdefault((lcs[0],lcs[6]),IntervalTree()).addi(int(lcs[3]),int(lcs[4])+1, (gid,lcs[2])) # +1 because intervaltree is exclusive on the right
 
-    if os.path.exists("tmp.gtf"):
-        os.remove("tmp.gtf")
+    if os.path.exists(tmp_fname):
+        os.remove(tmp_fname)
 
     return gene_trees
 
@@ -438,7 +443,10 @@ def extract_donor_acceptor(fname):
                 acceptors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,strand)
 
     # run gffread to standardize
-    cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
+    tmp_fname = None
+    with tempfile.NamedTemporaryFile(suffix=".gtf", delete=False) as tmp_file:
+        tmp_fname = tmp_file.name
+    cmd = ["gffread","-T","-F","-o",tmp_fname,fname]
     subprocess.call(cmd)
 
     donors = {} # position to gene gene_id
@@ -447,7 +455,7 @@ def extract_donor_acceptor(fname):
     # iterate over lines of gtf to extract the donor acceptor sites
     # donor is defined as the last base of the previous exon
     # acceptor is defined as the first base of the current exon
-    with open("tmp.gtf","r") as inFP:
+    with open(tmp_fname,"r") as inFP:
         chain = []
         strand = ""
         gid = ""
@@ -468,8 +476,8 @@ def extract_donor_acceptor(fname):
     
         # process last chain
         chain2sites(chain,donors,acceptors)
-    if os.path.exists("tmp.gtf"):
-        os.remove("tmp.gtf")
+    if os.path.exists(tmp_fname):
+        os.remove(tmp_fname)
 
     return donors,acceptors
 

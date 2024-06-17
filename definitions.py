@@ -61,14 +61,50 @@ def load_attributes(fname:str,groupby:str="transcript_id",feature:str="transcrip
                     res[group] = attrs
                 
     return res
+
+def gtf_or_gff(file_path):
+    """
+    Checks whether a file is in GTF or GFF format.
+
+    Args:
+    file_path (str): Path to the file to check.
+
+    Returns:
+    str: 'GTF', 'GFF', or 'Unknown' based on the file format.
+    """
+    try:
+        with open(file_path, 'r') as file:
+            for line in file:
+                # Skip comments and empty lines
+                if line.startswith('#') or not line.strip():
+                    continue
                 
+                # Split the line into fields
+                lcs = line.strip().split('\t')
+                
+                # Check the number of fields
+                if len(lcs) != 9:
+                    return None
+                
+                # Check for GTF-specific attributes (field 9 contains key-value pairs separated by semicolons)
+                if 'gene_id \"' in lcs[8] and 'transcript_id \"' in lcs[8]:
+                    return 'gtf'
+                
+                # Check for GFF-specific format (attribute field contains key-value pairs separated by semicolons, but without "gene_id" or "transcript_id")
+                if 'ID=' in lcs[8] or 'Parent=' in lcs[8]:
+                    return 'gff'
+                
+            return None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
 
 def load_fasta_dict(fa_fname:str,rev:bool=False,upper:bool=False) -> dict:
     """
     This function loads a FASTA file into a dictionary.
 
     Parameters:
-    fa_fname (str): The name of the FASTA file to load.
+    fa_fname (str): The name of the FASTA file to load. 
     rev (bool, optional): If True, the function will reverse the dictionary, making the sequences the keys and the names the values. Defaults to False.
     upper (bool, optional): If True, the function will convert all sequences to uppercase. Defaults to False.
 
@@ -179,6 +215,9 @@ def intersect(s1:list,s2:list) -> (int,list):
         res[1] = tie
         return (tie-tis)+1,res
     return 0,res
+
+def chains_overlap(chain1:list,chain2:list) -> bool:
+    return chain1[0][0] <= chain2[-1][1] and chain1[-1][1] >= chain2[0][0]
 
 def split(s1:list,s2:list) -> (list,list,list):
     """
@@ -401,7 +440,7 @@ def to_dict(df:pd.DataFrame,key_col:str,val_cols=None) -> dict:
             
     return res
 
-def get_attribute(gtf_fname:str,attrs,cols:list=None,feature:str="transcript",gff:bool=False) -> pd.DataFrame:
+def get_attribute(gtf_fname:str,attrs,cols:list=None,feature:str="transcript",gff:bool=False,as_dict=False) -> pd.DataFrame:
     """
     This function extracts attributes from a GTF file and loads them into a dictionary grouped by transcript ID.
 
@@ -443,6 +482,10 @@ def get_attribute(gtf_fname:str,attrs,cols:list=None,feature:str="transcript",gf
                 for a in clean_attrs:
                     gn = cur_attrs.get(a,"-")
                     tid2name[tid].append(gn)
+                    
+    if as_dict:
+        return tid2name
+    
     res = pd.DataFrame.from_dict(tid2name,orient="index").reset_index()
     tmp_cols = ["tid"]
     if cols is not None:
@@ -488,12 +531,13 @@ def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False) -> p
 
             res[tid][-1].append((int(lcs[3]),int(lcs[4])))
             if phase:
-                res[tid][-1][-1].append(lcs[7])
+                res[tid][-1][-1] = (res[tid][-1][-1][0],res[tid][-1][-1][1],lcs[7])
             res[tid][0]=1
             
     for k,v in res.items():
         res[k] = v[:-1]
-        res[k].append(sorted(v[-1]))
+        res[k].append(tuple(sorted(v[-1]))) # sort and convert chain to tuple instead of list - this way we can run direct groupby on chains since they are hashable
+    
     res = pd.DataFrame.from_dict(res,orient="index").reset_index()
     if(coords):
         res.columns = ["tid","has_cds","seqid","strand","coords","chain"]
@@ -682,6 +726,27 @@ def load_tid2aa(fname:str) -> pd.DataFrame:
     res.columns = ["tid","aa"]
     return res
 
+def merge(segs:list,inclusive = False) -> list:
+    """
+    This function merges overlapping intervals.
+
+    Parameters:
+    segs (list): A list of intervals to merge.
+
+    Returns:
+    list: A list of merged intervals.
+    """
+    segs.sort()
+    res = [[segs[0][0],segs[0][1]]]
+    for s in segs:
+        prev = res[-1]
+        if s[0] <= prev[1] + int(inclusive): # add one if inclusive intervals are enabled
+            prev[1] = max(prev[1], s[1])
+        else:
+            res.append([s[0],s[1]])
+            
+    return res
+
 def load_segments(fname:str,feature_type:str,strandless:bool=False) -> dict:
     """
     This function loads segments from a GFF3 file into a dictionary. Useful for loading all contiguous segments of feature type.
@@ -696,27 +761,6 @@ def load_segments(fname:str,feature_type:str,strandless:bool=False) -> dict:
     Returns:
     dict: A dictionary where each key is a sequence ID and each value is a dictionary of segments for that sequence.
     """
-    
-    def merge(segs:list) -> list:
-        """
-        This function merges overlapping intervals.
-
-        Parameters:
-        segs (list): A list of intervals to merge.
-
-        Returns:
-        list: A list of merged intervals.
-        """
-        segs.sort()
-        res = [[segs[0][0],segs[0][1]]]
-        for s in segs:
-            prev = res[-1]
-            if s[0] <= prev[1]:
-                prev[1] = max(prev[1], s[1])
-            else:
-                res.append([s[0],s[1]])
-                
-        return res
 
     res = dict({"+":dict(),
                 "-":dict()})
@@ -1142,23 +1186,35 @@ def get_coding_gids(gtf_fname:str) -> set:
     df["gid"] = df["attributes"].str.split("gene_id \"",expand=True)[1].str.split("\"",expand=True)[0]
     return set(df["gid"])
 
-def subset_gtf_by_seqid(in_gtf_fname:str,out_gtf_fname:str,seqids:list) -> None:
+def subset_gtf_by_coords(in_gtf_fname: str, out_gtf_fname: str, coords: list or dict) -> None:
     """
-    This function subsets a GTF file by sequence ID. The output GTF file will only contain transcripts on the selected sequence IDs.
-    
+    This function subsets a GTF file by sequence ID and coordinates. The output GTF file will only contain transcripts on the selected sequence IDs and within the specified coordinates.
+
     Parameters:
     in_gtf_fname (str): The name of the input GTF file.
     out_gtf_fname (str): The name of the output GTF file.
-    seqids (list): A list of sequence IDs to keep.
+    coords (list or dict): A list of sequence identifiers or a dictionary where keys are sequence IDs and value is a list of coordinates (strand, start, end with strand possibly being set to none)
     """
-    with open(out_gtf_fname,"w+") as outFP:
-        with open(in_gtf_fname,"r") as inFP:
+    with open(out_gtf_fname, "w+") as outFP:
+        with open(in_gtf_fname, "r") as inFP:
             for line in inFP:
                 lcs = line.rstrip().split("\t")
-                if not seqids == False and lcs[0] not in seqids:
+                seq_id = lcs[0]
+
+                if not coords or (seq_id not in coords if isinstance(coords, list) else seq_id not in coords.keys()):
                     continue
-                    
+
+                if isinstance(coords, dict):
+                    for c_strand,c_start,c_end in coords[seq_id]:
+                        if not (
+                            (c_strand is None or lcs[6] == c_strand) and
+                            int(lcs[3]) >= c_start and
+                            int(lcs[4]) <= c_end
+                        ):
+                            continue
+
                 outFP.write(line)
+
     
 def subset_gtf(in_gtf_fname:str,out_gtf_fname:str,gids:list,tids:list) -> None:
     """
@@ -1175,6 +1231,8 @@ def subset_gtf(in_gtf_fname:str,out_gtf_fname:str,gids:list,tids:list) -> None:
         with open(in_gtf_fname,"r") as inFP:
             for line in inFP:
                 lcs = line.rstrip().split("\t")
+                if not lcs[2] in ["transcript","exon","CDS"]:
+                    continue
                 tid = lcs[8].split("transcript_id \"", 1)[1].split("\"", 1)[0]
                 if lcs[2]=="transcript":
                     if not gids == False:
@@ -1291,8 +1349,11 @@ def extract_attributes(attribute_str:str,gff=False)->dict:
     if gff:
         sep = "="
     for at in attrs:
-        k,v = at.split(sep)
-        attrs_dict.setdefault(k,v)
+        try:
+            k,v = at.split(sep)
+            attrs_dict.setdefault(k,v)
+        except:
+            continue
         
     return attrs_dict
 
@@ -1401,7 +1462,7 @@ def get_intervals(gtf_fname:str,feature:str="exon",invert:bool=False) -> dict:
 
     for tid, idata in intervals.items():
         if invert: # get introns
-            for ii in range(1,len(idata["intervals"][1:]),1):
+            for ii in range(1,len(idata["intervals"]),1):
                 key = (idata["seqname"],idata["strand"])
                 res_intervals.setdefault(key,dict())
                 rit = (idata["intervals"][ii-1][1]+1,idata["intervals"][ii][0]-1)
@@ -1680,7 +1741,7 @@ def trans2genome(chain:list,strand:str,zero_pos:int) -> int:
     assert chain_pos>=0,"unexpected chain_pos<0"
     return chain_pos
 
-def cut_chain(chain:list,start:int,end:int) -> list:
+def cut(chain:list,start:int,end:int) -> list:
     """
     This function cuts a chain of intervals to a specified start and end position.
 

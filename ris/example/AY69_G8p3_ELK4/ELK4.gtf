@@ -1,0 +1,10 @@
+1	ensembl	transcript	63137916	63154206	.	-	.	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_version "4"; transcript_version "4"; gene_name "ELK4"; gene_source "ensembl"; gene_biotype "protein_coding"; transcript_name "ELK4-201"; transcript_source "ensembl"; transcript_biotype "protein_coding"; tag "Ensembl_canonical"; protein_id "ENSMMUP00000005500"; protein_version "2"
+1	ensembl	exon	63137916	63138463	.	-	.	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4"; exon_version "3";
+1	ensembl	exon	63141390	63141506	.	-	.	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4"; exon_version "1";
+1	ensembl	exon	63142709	63143581	.	-	.	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4"; exon_version "2";
+1	ensembl	exon	63146446	63146661	.	-	.	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4"; exon_version "3";
+1	ensembl	exon	63154009	63154206	.	-	.	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4"; exon_version "1";
+1	ensembl	CDS	63138365	63138463	.	-	0	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4";
+1	ensembl	CDS	63141390	63141506	.	-	0	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4";
+1	ensembl	CDS	63142709	63143581	.	-	0	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4";
+1	ensembl	CDS	63146446	63146652	.	-	0	transcript_id "ENSMMUT00000005840"; gene_id "ENSMMUG00000001024"; gene_name "ELK4";

@@ -394,6 +394,20 @@ def extract_donor_acceptor(fname):
     # return two dictionaries, one for donors and one for acceptors
     # each dictionary maps position to the gene name
 
+    def chain2sites(chain,donors,acceptors):
+        for i in range(1,len(chain)):
+            if chain[i][0] - chain[i-1][1] < 1:
+                print("Intron too short. Discarding. ",chain[i-1],chain[i])
+                continue
+
+            # consider strand
+            if strand == "+":
+                donors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,strand)
+                acceptors.setdefault(lcs[0],{})[chain[i][0]] = (gid,strand)
+            else:
+                donors.setdefault(lcs[0],{})[chain[i][0]] = (gid,strand)
+                acceptors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,strand)
+
     # run gffread to standardize
     cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
     subprocess.call(cmd)
@@ -414,19 +428,7 @@ def extract_donor_acceptor(fname):
             lcs = line.strip().split("\t")
             
             if lcs[2] == "transcript":
-                for i in range(1,len(chain)):
-                    if chain[i][0] - chain[i-1][1] < 1:
-                        print("Intron too short. Discarding. ",chain[i-1],chain[i])
-                        continue
-
-                    # consider strand
-                    if strand == "+":
-                        donors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,strand)
-                        acceptors.setdefault(lcs[0],{})[chain[i][0]] = (gid,strand)
-                    else:
-                        donors.setdefault(lcs[0],{})[chain[i][0]] = (gid,strand)
-                        acceptors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,strand)
-                        
+                chain2sites(chain,donors,acceptors)     
                 # new transcript
                 chain = []
                 gid = lcs[8].split("gene_id ")[1].split(";")[0].strip("\"")
@@ -435,6 +437,8 @@ def extract_donor_acceptor(fname):
             if lcs[2] == "exon":
                 chain.append((int(lcs[3]),int(lcs[4]))) # position: start,end,strand
     
+        # process last chain
+        chain2sites(chain,donors,acceptors)
     if os.path.exists("tmp.gtf"):
         os.remove("tmp.gtf")
 

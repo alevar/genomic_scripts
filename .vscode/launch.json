@@ -82,16 +82,16 @@
 	        "console": "integratedTerminal"
         },
         {
-            "name": "ris AY69_E4p5_LTA.R1",
+            "name": "ris AY69_E4p5_LTA.R2",
             "type": "python",
             "request": "launch",
             "program": "./ris/ris.py",
             "args": [
-                "-i1", "./ris/example/AY69_E4p5_LTA.R1.host.blastn.6",
-                "-i2", "./ris/example/AY69_E4p5_LTA.R1.path.blastn.6",
+                "-i1", "./ris/example/AY69_E4p5_LTA.R2.host.blastn.6",
+                "-i2", "./ris/example/AY69_E4p5_LTA.R2.path.blastn.6",
                 "-a1", "./ris/example/LTA.gtf",
                 "-a2", "./ris/example/csess.1.0.0.known.gtf",
-                "-o", "./ris/example/AY69_E4p5_LTA.R1",
+                "-o", "./ris/example/AY69_E4p5_LTA.R2",
                 "-two_pass",
                 "-group",
 	        ],
@@ -140,6 +140,22 @@
                 "-a1", "./ris/example/INPP4A.gtf",
                 "-a2", "./ris/example/csess.1.0.0.known.gtf",
                 "-o", "./ris/example/AY69_G11p7_DAZAP1.R1",
+                "-two_pass",
+                "-group",
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
+            "name": "ris AY69_G8p3_ELK4.R1",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/AY69_G8p3_ELK4/AY69_G8p3_ELK4.R1.host.blastn.6",
+                "-i2", "./ris/example/AY69_G8p3_ELK4/AY69_G8p3_ELK4.R1.path.blastn.6",
+                "-a1", "./ris/example/AY69_G8p3_ELK4/ELK4.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/AY69_G8p3_ELK4/ris",
                 "-two_pass",
                 "-group",
 	        ],

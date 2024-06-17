@@ -1,8 +1,0 @@
-genome1_seqid	genome2_seqid	genome1_breakpoint	genome2_breakpoint	count	junction1	junction2	gene1	gene2
-NC_041756.1	M33262.1	176512901	1077	78	-	-	-	env;gag;rev;vpr;vif;tat;env/vpu;nef
-NC_041756.1	M33262.1	176514037	1241	173	gene-GIMAP7	vif	gene-GIMAP7	env;gag;rev;vpr;vif;tat;env/vpu;nef
-NC_041756.1	M33262.1	176514037	10408	24	gene-GIMAP7	-	gene-GIMAP7	env;gag;rev;vpr;vif;tat;env/vpu;nef
-NC_041756.1	M33262.1	176514088	1105	24	-	-	gene-GIMAP7	env;gag;rev;vpr;vif;tat;env/vpu;nef
-NC_041756.1	M33262.1	176514877	6494	12	-	-	gene-GIMAP7	gag;vif;vpr
-NC_041756.1	M33262.1	176512898	10535	5	-	-	-	env;gag;rev;vpr;vif;tat;env/vpu;nef
-NC_041756.1	M33262.1	176512901	1076	1	-	-	-	env;gag;rev;vpr;vif;tat;env/vpu;nef

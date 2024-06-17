@@ -8,6 +8,7 @@ import sys
 import copy
 import random
 import shutil
+import tempfile
 import argparse
 import subprocess
 from intervaltree import Interval, IntervalTree
@@ -93,7 +94,11 @@ class Read:
 
         # handle the case when the site is upstream of the read start position
         for i in range(self.qstart-2,-1,-1):
-            genome_pos = self.sstart - (self.qstart - i) if self.sstart < self.send else self.sstart + (self.qstart - i)
+            genome_pos = None
+            if self.sstart < self.send:
+                genome_pos = self.sstart - (self.qstart-1 - i)
+            else:
+                genome_pos = self.sstart + (self.qstart-1 - i)
             if genome_pos in sites:
                 res.append([i,sites[genome_pos]])
         
@@ -124,7 +129,13 @@ class Read:
 
         # handle the case when the site is downstream of the read end position
         for i in range(index_read,self.qlen,1):
-            genome_pos = index_genome + (i - index_read) if self.sstart < self.send else index_genome - (i - index_read)
+            genome_pos = None
+            if self.sstart < self.send:
+                genome_pos = index_genome + (i - index_read)
+            else:
+                genome_pos = index_genome - (i - index_read)
+            if genome_pos in sites:
+                res.append([i,sites[genome_pos]])
             if genome_pos in sites:
                 res.append([i,sites[genome_pos]])
 
@@ -185,16 +196,23 @@ class Read:
         return
     
     def read2genome(self,pos):
-        # given a btop string and the start position of the read and the genome
-        # return the position on the genome corresponding to the position on the read
+        for i in range(self.qstart-2,-1,-1):
+            genome_pos = None
+            if self.sstart < self.send:
+                genome_pos = self.sstart - (self.qstart-1 - i)
+            else:
+                genome_pos = self.sstart + (self.qstart-1 - i)
+            if i == pos:
+                return genome_pos
+        
         index_read = self.qstart-1
         index_genome = self.sstart
-
         inc = 1 if self.sstart < self.send else -1
 
+        if index_read == pos:
+            return index_genome
+
         for b in self.btopl:
-            if index_read == pos:
-                return index_genome
             if isinstance(b, int):
                 for i in range(0,b,1):
                     index_genome += inc
@@ -209,15 +227,18 @@ class Read:
                 else: # mismatch - treat as a regular match here
                     index_genome += inc
                     index_read += 1
+                    if index_read == pos:
+                        return index_genome
 
-        if pos < self.qstart:
-            # if site is upstream of the read start position
-            # just return the start position - the difference between the two
-            return self.sstart - (self.qstart - pos)
-        else:
-            # Otherwise if the position is further down the read than the btop string
-            # just add the difference
-            return index_genome + (pos - index_read)
+        # handle the case when the site is downstream of the read end position
+        for i in range(index_read,self.qlen,1):
+            genome_pos = None
+            if self.sstart < self.send:
+                genome_pos = index_genome + (i - index_read)
+            else:
+                genome_pos = index_genome - (i - index_read)
+            if i == pos:
+                return genome_pos
 
 class Binread:
     def __init__(self):
@@ -325,8 +346,11 @@ class Binread:
         # returns the result if read is broken at specific position
         # can be used to score breaks at junction sites by explicitely splitting at a given position
         # and incrementing the returned score by the wight of the junction
-        
-        binread = self.read1.binread[:pos]+self.read2.binread[pos:] if orientation==1 else self.read2.binread[:pos]+self.read1.binread[pos:]
+        binread = None
+        if orientation == 1:
+            binread = self.read1.binread[:pos+1]+self.read2.binread[pos+1:] # +1 because we want to include the breakpoint
+        else:
+            binread = self.read2.binread[:pos+1]+self.read1.binread[pos+1:]
         score = sum(binread)/len(binread)
         return [pos,binread,score]
 
@@ -343,9 +367,15 @@ class Binread:
             results.append([pos,binread,score,(None,None)])
         
         if wp1[0] is not None and wp1[0]<len(self.read1.binread):
-            self.read1.binread[wp1[0]] = wp1[2]
+            if orientation == 1:
+                self.read1.binread[wp1[0]] = wp1[2]
+            else:
+                self.read2.binread[wp1[0]] = wp1[2]
         if wp2[0] is not None and wp2[0]<len(self.read2.binread):
-            self.read2.binread[wp2[0]] = wp2[2]
+            if orientation == 1:
+                self.read2.binread[wp2[0]] = wp2[2]
+            else:
+                self.read1.binread[wp2[0]] = wp2[2]
 
         if wp1[0] is not None:
             bp = self.break_at(wp1[0],orientation)
@@ -368,13 +398,17 @@ def extract_genes(fname):
     # returns a dictionary mapping position to the gene name
 
     # run gffread to standardize
-    cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
+    tmp_fname = None
+    with tempfile.NamedTemporaryFile(suffix=".gtf", delete=False) as tmp_file:
+        tmp_fname = tmp_file.name
+
+    cmd = ["gffread","-T","-F","-o",tmp_fname,fname]
     subprocess.call(cmd)
 
     gene_trees = {}
 
     # iterate over lines of gtf to extract the genes
-    with open("tmp.gtf","r") as inFP:
+    with open(tmp_fname,"r") as inFP:
         for line in inFP:
             if line[0]=="#":
                 continue
@@ -384,8 +418,8 @@ def extract_genes(fname):
 
                 gene_trees.setdefault((lcs[0],lcs[6]),IntervalTree()).addi(int(lcs[3]),int(lcs[4])+1, (gid,lcs[2])) # +1 because intervaltree is exclusive on the right
 
-    if os.path.exists("tmp.gtf"):
-        os.remove("tmp.gtf")
+    if os.path.exists(tmp_fname):
+        os.remove(tmp_fname)
 
     return gene_trees
 
@@ -409,7 +443,10 @@ def extract_donor_acceptor(fname):
                 acceptors.setdefault(lcs[0],{})[chain[i-1][1]] = (gid,strand)
 
     # run gffread to standardize
-    cmd = ["gffread","-T","-F","-o","tmp.gtf",fname]
+    tmp_fname = None
+    with tempfile.NamedTemporaryFile(suffix=".gtf", delete=False) as tmp_file:
+        tmp_fname = tmp_file.name
+    cmd = ["gffread","-T","-F","-o",tmp_fname,fname]
     subprocess.call(cmd)
 
     donors = {} # position to gene gene_id
@@ -418,7 +455,7 @@ def extract_donor_acceptor(fname):
     # iterate over lines of gtf to extract the donor acceptor sites
     # donor is defined as the last base of the previous exon
     # acceptor is defined as the first base of the current exon
-    with open("tmp.gtf","r") as inFP:
+    with open(tmp_fname,"r") as inFP:
         chain = []
         strand = ""
         gid = ""
@@ -439,8 +476,9 @@ def extract_donor_acceptor(fname):
     
         # process last chain
         chain2sites(chain,donors,acceptors)
-    if os.path.exists("tmp.gtf"):
-        os.remove("tmp.gtf")
+        
+    if os.path.exists(tmp_fname):
+        os.remove(tmp_fname)
 
     return donors,acceptors
 

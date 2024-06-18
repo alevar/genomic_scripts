@@ -476,6 +476,7 @@ def extract_donor_acceptor(fname):
     
         # process last chain
         chain2sites(chain,donors,acceptors)
+        
     if os.path.exists(tmp_fname):
         os.remove(tmp_fname)
 

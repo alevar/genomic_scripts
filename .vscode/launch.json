@@ -128,6 +128,22 @@
 	        "console": "integratedTerminal"
         },
         {
+            "name": "ris AY69_G8p3_ELK4.R1",
+            "type": "python",
+            "request": "launch",
+            "program": "./ris/ris.py",
+            "args": [
+                "-i1", "./ris/example/AY69_G8p3_ELK4/AY69_G8p3_ELK4.R1.host.blastn.6",
+                "-i2", "./ris/example/AY69_G8p3_ELK4/AY69_G8p3_ELK4.R1.path.blastn.6",
+                "-a1", "./ris/example/AY69_G8p3_ELK4/ELK4.gtf",
+                "-a2", "./ris/example/csess.1.0.0.known.gtf",
+                "-o", "./ris/example/AY69_G8p3_ELK4/ris",
+                "-two_pass",
+                "-group",
+	        ],
+	        "console": "integratedTerminal"
+        },
+        {
             "name": "Python: subset_tree",
             "type": "python",
             "request": "launch",

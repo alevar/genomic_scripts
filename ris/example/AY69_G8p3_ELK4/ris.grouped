@@ -1,0 +1,3 @@
+genome1_seqid	genome2_seqid	genome1_breakpoint	genome2_breakpoint	count	junction1	junction2	gene1	gene2
+1	M33262.1	63154009	976	6	ENSMMUG00000001024	-	ENSMMUG00000001024:exon	env:exon;env/vpu:exon;gag:exon;nef:exon;rev:exon;tat:exon;vif:exon;vpr:exon
+1	M33262.1	63154009	10437	11	ENSMMUG00000001024	-	ENSMMUG00000001024:exon	env:exon;env/vpu:exon;gag:exon;nef:exon;rev:exon;tat:exon;vif:exon;vpr:exon

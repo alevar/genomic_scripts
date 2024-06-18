@@ -5,6 +5,20 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "createRelease",
+            "type": "python",
+            "request": "launch",
+            "program": "/home/sparrow/genomicTools/genomic_scripts/chess/createRelease.py",
+            "args": [
+                "-gtf_file", "/home/sparrow/genomicTools/genomic_scripts/clustchessRep/example/chess3.0.1.adj_stop.corrected.gffread.chr21.gtf",
+                "-outdir", "/home/sparrow/genomicTools/genomic_scripts/chess/example/release",
+                "-release_number", "0.0.0",
+                "-contig_lengths", "/home/sparrow/genomicTools/genomic_scripts/chess/example/hs38DH.len",
+                "-gene_description_reference", "/home/sparrow/genomicTools/genomic_scripts/chess/example/refseq_gene_description.tsv",0
+            ],
+            "console": "integratedTerminal"
+        },
+        {
             "name": "clustrep",
             "type": "python",
             "request": "launch",

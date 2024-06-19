@@ -8,13 +8,13 @@
             "name": "createRelease",
             "type": "python",
             "request": "launch",
-            "program": "/home/sparrow/genomicTools/genomic_scripts/chess/createRelease.py",
+            "program": "./chess/createRelease.py",
             "args": [
-                "-gtf_file", "/home/sparrow/genomicTools/genomic_scripts/clustchessRep/example/chess3.0.1.adj_stop.corrected.gffread.chr21.gtf",
-                "-outdir", "/home/sparrow/genomicTools/genomic_scripts/chess/example/release",
-                "-release_number", "0.0.0",
-                "-contig_lengths", "/home/sparrow/genomicTools/genomic_scripts/chess/example/hs38DH.len",
-                "-gene_description_reference", "/home/sparrow/genomicTools/genomic_scripts/chess/example/refseq_gene_description.tsv",0
+                "--gtf_file", "./chess/example/chess3.0.1.adj_stop.corrected.gffread.chr21.gtf",
+                "--outdir", "./chess/example/release",
+                "--release_number", "0.0.0",
+                "--contig_lengths", "./chess/example/hs38DH.len",
+                "--gene_description_reference", "./chess/example/refseq.chr21.gff",
             ],
             "console": "integratedTerminal"
         },

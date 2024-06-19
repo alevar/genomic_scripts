@@ -1,8 +1,12 @@
+#!/usr/bin/env python3
+
 import os
 import subprocess
 import sys
+import shutil
 import argparse
 import datetime
+import pandas as pd
 
 def gtf_or_gff(file_path):
     """
@@ -41,24 +45,41 @@ def gtf_or_gff(file_path):
         print(f"An error occurred: {e}")
         return None
 
-def get_comments(number: str, fmt: str) -> str:
-    assert fmt in ["GTF", "GFF"], "Invalid format"
-    assert number.split(".") == 3, "Invalid release number"
+def get_comments(number: str) -> str:
+    assert len(number.split(".")) == 3, "Invalid release number"
     comment_str = "##NAME: CHESS\n" + \
                   "##VERSION: "+number+"\n" + \
                   "##DESCRIPTION: Comprehensive Human Expressed SequenceS\n" + \
-                  "##FORMAT: "+fmt+"\n" + \
                   "##DATE: "+datetime.datetime.now().strftime("%Y-%m-%d")+"\n" + \
                   "##CONTACT: ales[dot]varabyou[at]jhu[dot][edu],mpertea[at]jhu[dot][edu]\n"
     return comment_str
 
-def extract_attributes(attribute_str: str) -> dict:
-    attributes = {}
-    for attribute in attribute_str.strip().split(";"):
-        if attribute:
-            key, value = attribute.strip().split(" ")
-            attributes[key] = value.strip('"')
-    return attributes
+def extract_attributes(attribute_str:str,gff=False)->dict:
+    """
+    This function extracts attributes from an attribute string. Assumes that the only information passed is the 9th column of the GTF file;
+    
+    Parameters:
+    attribute_str (str): The attribute string to extract attributes from.
+    gff (bool, optional): A flag indicating whether the attribute string is from a GFF file. Defaults to False.
+
+    Returns:
+    dict: A dictionary of attributes extracted from the attribute string.
+    """
+    attrs = attribute_str.rstrip().rstrip(";").split(";")
+    attrs = [x.strip() for x in attrs]
+    attrs = [x.strip("\"") for x in attrs]
+    attrs_dict = dict()
+    sep = " \""
+    if gff:
+        sep = "="
+    for at in attrs:
+        try:
+            k,v = at.split(sep)
+            attrs_dict.setdefault(k,v)
+        except:
+            continue
+        
+    return attrs_dict
 
 def to_attribute_string(attrs: dict, for_gff: bool, feature_type: str) -> str:
     return "; ".join([f'{key}="{value}"' for key, value in attrs.items()])
@@ -142,26 +163,27 @@ def load_gene_descriptions(fname: str) -> dict:
     gene_desc_dict = gene_desc.set_index('Name').to_dict()['description']
     return gene_desc_dict
 
-def main():
-    parser = argparse.ArgumentParser(description="Process GTF file to generate various derivative files and create a new release of the CHESS annotation.")
-    parser.add_argument("gtf_file", help="Input GTF file")
-    parser.add_argument("outdir", help="Base directory for output files")
-    parser.add_argument("release_number", help="Release number")
-    parser.add_argument("gene_description_reference", "GFF3 file containing gene records which can be used to provide gene descriptions for CHESS genes")
-    parser.add_argument("contig_lengths", "File containing the lengths of the contigs in the reference genome")
-    args = parser.parse_args()
+def run(args):
+    # setup output directory
+    outdir = os.path.abspath(args.outdir)+"/"
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
 
     # check that the input is in the GTF format
+    assert os.path.exists(args.gtf_file), "Input file not found"
     assert gtf_or_gff(args.gtf_file) == 'gtf', "Input file is not in GTF format"
 
     # load gene descriptions from the reference file
     assert os.path.exists(args.gene_description_reference), "Gene description reference file not found"
     gene_desc_dict = load_gene_descriptions(args.gene_description_reference)
 
+    # assert that contigs lengths file exists
+    assert os.path.exists(args.contig_lengths), "Contig lengths file not found"
+
     # load a list of genes
     genes = dict()
 
-    with open(args.gtf_fname, "r") as inFP:
+    with open(args.gtf_file, "r") as inFP:
         for line in inFP:
             if line[0] == "#":
                 continue
@@ -208,10 +230,10 @@ def main():
             genes[gid][1][tid] += line
 
     # write out a version of the GTF file with gene information
-    with_genes_gtf_fname = args.outdir + "1.with_genes.gtf"
+    with_genes_gtf_fname = outdir + "1.with_genes.gtf"
     with open(with_genes_gtf_fname, "w+") as outFP:
-        outFP.write(get_comments())
-        with open(args.gtf_fname, "r") as inFP:
+        outFP.write(get_comments(args.release_number))
+        with open(args.gtf_file, "r") as inFP:
             for line in inFP:
                 if line[0] == "#":
                     outFP.write(line)
@@ -250,39 +272,41 @@ def main():
                 outFP.write(tv)
 
     # convert the GTF file to GFF
-    with_genes_gff_fname = args.outdir + "1.with_genes.gff"
+    with_genes_gff_fname = outdir + "1.with_genes.gff"
     gtf2gff(with_genes_gtf_fname, with_genes_gff_fname)
 
     os.environ['LD_LIBRARY_PATH'] = "/ccb/sw/lib/:LD_LIBRARY_PATH"
 
-    genePred_fname = args.outdir + "2.with_genes.genePred"
+    genePred_fname = outdir + "2.with_genes.genePred"
     cmd = ["gff3ToGenePred", with_genes_gff_fname, genePred_fname]
     subprocess.call(cmd)
 
-    bedPlus_fname = args.outdir + "2.with_genes.bedPlus"
+    bedPlus_fname = outdir + "2.with_genes.bedPlus"
     cmd = ["genePredToBigGenePred", genePred_fname, bedPlus_fname]
     subprocess.call(cmd)
 
-    sorted_bedPlus_fname = args.outdir + "2.with_genes.srt.bedPlus"
+    sorted_bedPlus_fname = outdir + "2.with_genes.srt.bedPlus"
     cmd = ["bedSort", bedPlus_fname, sorted_bedPlus_fname]
     subprocess.call(cmd)
 
     os.rename(sorted_bedPlus_fname, bedPlus_fname)
 
-    cmd = ["bedToBigBed", "-type=bed12+8", "-tab", "-as=bigGenePred.as", bedPlus_fname,
-           chess3_data_dir + "hs38DH.len", chess31_gff_fname.rstrip(".gff") + ".bb", "-extraIndex=name"]
+    bb_fname = outdir + "2.with_genes.bb"
+    cmd = ["bedToBigBed", "-type=bed12+8", "-tab", "-as="+args.bed_as, bedPlus_fname,
+           args.contig_lengths, bb_fname, "-extraIndex=name"]
     subprocess.call(cmd)
 
-    rdir = os.path.join(base_dir, "chess3.0.1/")
+    base_name = args.prefix+args.release_number+"."+args.suffix
+    rdir = os.path.join(outdir, base_name+"/")
     if not os.path.exists(rdir):
         os.makedirs(rdir)
 
-    os.rename(chess31_gtf_fname, os.path.join(rdir, "chess3.0.1.gtf"))
-    os.rename(chess31_gff_fname, os.path.join(rdir, "chess3.0.1.gff"))
-    os.rename(chess31_gff_fname.rstrip(".gff") + ".bb", os.path.join(rdir, "chess3.0.1.bb"))
+    shutil.copy(args.gtf_file, os.path.join(rdir, base_name+".gtf"))
+    os.rename(with_genes_gff_fname, os.path.join(rdir, base_name+".gff"))
+    os.rename(bb_fname, os.path.join(rdir, base_name+".bb"))
 
-    with open(os.path.join(rdir, "chess3.0.1.primary.gtf"), "w+") as outFP:
-        with open(os.path.join(rdir, "chess3.0.1.gtf"), "r") as inFP:
+    with open(os.path.join(rdir, base_name+".primary.gtf"), "w+") as outFP:
+        with open(os.path.join(rdir, base_name+".gtf"), "r") as inFP:
             for line in inFP:
                 lcs = line.split("\t")
                 if lcs[0] == "#":
@@ -295,8 +319,8 @@ def main():
 
                 outFP.write(line)
 
-    with open(os.path.join(rdir, "chess3.0.1.primary.gff"), "w+") as outFP:
-        with open(os.path.join(rdir, "chess3.0.1.gff"), "r") as inFP:
+    with open(os.path.join(rdir, base_name+".primary.gff"), "w+") as outFP:
+        with open(os.path.join(rdir, base_name+".gff"), "r") as inFP:
             for line in inFP:
                 lcs = line.split("\t")
                 if lcs[0] == "#":
@@ -309,9 +333,26 @@ def main():
 
                 outFP.write(line)
 
-    cmd = ["gffread", "-g", "/ccb/salz7-home/avaraby1/genomes/human/hg38/hg38_p12_ucsc.fa", "-y",
-           os.path.join(rdir, "chess3.0.1.protein.fa"), os.path.join(rdir, "chess3.0.1.primary.gtf")]
+    cmd = ["gffread", "-g", args.genome, "-y",
+           os.path.join(rdir, base_name+".protein.fa"), os.path.join(rdir, base_name+".primary.gtf")]
     subprocess.call(cmd)
 
-if __name__ == "__main__":
-    main()
+def main(args):
+    parser = argparse.ArgumentParser(description="Process GTF file to generate various derivative files and create a new release of the CHESS annotation.")
+    parser.add_argument("--gtf_file", help="Input GTF file")
+    parser.add_argument("--outdir", help="Base directory for output files")
+    parser.add_argument("--release_number", help="Release number")
+    parser.add_argument("--gene_description_reference", help="GFF3 file containing gene records which can be used to provide gene descriptions for CHESS genes")
+    parser.add_argument("--contig_lengths", help="File containing the lengths of the contigs in the reference genome")
+    parser.add_argument("--prefix", help="Prefix for the output files")
+    parser.add_argument("--suffix", help="Suffix for the output files")
+    parser.add_argument("--genome", help="Genome file")
+    parser.add_argument("--bed_as", help="Non-standard bed format for running bedToBigBed (consult bedToBigBed documentation for more information)")
+    parser.set_defaults(func=run)
+    args=parser.parse_args()
+    args.func(args)
+    
+    # TODO:
+    # 1. Compute summaries (# tx, cds, gid, etc)
+if __name__=="__main__":
+    main(sys.argv[1:])

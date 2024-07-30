@@ -8,6 +8,10 @@ import argparse
 import datetime
 import pandas as pd
 
+# Add the directory containing definitions.py to the system path
+module_path = os.path.abspath("../")
+if module_path not in sys.path:
+    sys.path.append(module_path)
 from definitions import *
 
 def gtf_or_gff(file_path):

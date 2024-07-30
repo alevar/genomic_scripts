@@ -492,8 +492,12 @@ def run(args):
         os.makedirs(rdir)
     
     base_name = rdir+"/"+args.prefix+args.release_number+"."+args.suffix
+    
+    primary_gtf_fname = base_name+".primary.gtf"
+    primary_gff_fname = base_name+".primary.gff"
+    primary_aa_fa_fname = base_name+".primary.protein.fa"
 
-    with open(os.path.join(rdir, base_name+".primary.gtf"), "w+") as outFP:
+    with open(primary_gtf_fname, "w+") as outFP:
         with open(os.path.join(rdir, base_name+".gtf"), "r") as inFP:
             for line in inFP:
                 lcs = line.split("\t")
@@ -507,7 +511,7 @@ def run(args):
 
                 outFP.write(line)
 
-    with open(os.path.join(rdir, base_name+".primary.gff"), "w+") as outFP:
+    with open(primary_gff_fname, "w+") as outFP:
         with open(os.path.join(rdir, base_name+".gff"), "r") as inFP:
             for line in inFP:
                 lcs = line.split("\t")
@@ -522,7 +526,7 @@ def run(args):
                 outFP.write(line)
 
     cmd = ["gffread", "-g", args.genome, "-y",
-           os.path.join(rdir, base_name+".protein.fa"), os.path.join(rdir, base_name+".primary.gtf")]
+           primary_aa_fa_fname, primary_gtf_fname]
     subprocess.call(cmd)
 
 def main(args):

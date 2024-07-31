@@ -231,7 +231,10 @@ def deduplicate_gtf(in_gtf_fname, out_gtf_fname, borf_fname):
     # 4. random choice
 
     # run borf on chess
-    cmd = [borf_fname,"--use_geneid","--score","-g",in_gtf_fname,"-o",out_gtf_fname+".borf"]
+    # get path to current python executable
+    python_exec = sys.executable
+    cmd = [python_exec,borf_fname,"--use_geneid","--score","-g",in_gtf_fname,"-o",out_gtf_fname+".borf.gtf"]
+    print(" ".join(cmd))
     subprocess.call(cmd)
     
     c3 = get_chains(in_gtf_fname,"exon",True)
@@ -329,24 +332,24 @@ def deduplicate_gtf(in_gtf_fname, out_gtf_fname, borf_fname):
         for idx, row in grp.iterrows():
             keep_tids[rnd_tid].append(row["tid"])
             
-        with open(out_gtf_fname,"w+") as outFP:
-            with open(in_gtf_fname,"r") as inFP:
-                for line in inFP:
-                    lcs = line.split("\t")
-                    if lcs[0]=="#":
-                        outFP.write(line)
-                    if not len(lcs)==9:
-                        outFP.write(line)
+    with open(out_gtf_fname,"w+") as outFP:
+        with open(in_gtf_fname,"r") as inFP:
+            for line in inFP:
+                lcs = line.split("\t")
+                if lcs[0]=="#":
+                    outFP.write(line)
+                if not len(lcs)==9:
+                    outFP.write(line)
+                    
+                tid = lcs[8].split("transcript_id \"",1)[1].split("\"",1)[0]
+                if tid in keep_tids:
+                    attrs = extract_attributes(lcs[8])
+                    if len(keep_tids[tid])>1:
+                        attrs["duplicates"] = ",".join(keep_tids[tid])
+                    res_line = "\t".join(lcs[:-1]) + "\t" + to_attribute_string(attrs, False, lcs[2])
+                    outFP.write(res_line + "\n")
                         
-                    tid = lcs[8].split("transcript_id \"",1)[1].split("\"",1)[0]
-                    if tid in keep_tids:
-                        attrs = extract_attributes(lcs[8])
-                        if len(keep_tids[tid])>1:
-                            attrs["duplicates"] = ",".join(keep_tids[tid])
-                        res_line = "\t".join(lcs[:-1]) + "\t" + to_attribute_string(attrs, True, lcs[2])
-                        outFP.write(res_line + "\n")
-                        
-def build_with_genes_gtf(in_gtf_fname, out_gtf_fname, gene_desc_dict):
+def build_with_genes_gtf(in_gtf_fname, out_gtf_fname, gene_desc_dict, release_number):
     # load a list of genes
     genes = dict()
 
@@ -398,7 +401,7 @@ def build_with_genes_gtf(in_gtf_fname, out_gtf_fname, gene_desc_dict):
 
     # write out a version of the GTF file with gene information
     with open(out_gtf_fname, "w+") as outFP:
-        outFP.write(get_comments(args.release_number))
+        outFP.write(get_comments(release_number))
         with open(in_gtf_fname, "r") as inFP:
             for line in inFP:
                 if line[0] == "#":
@@ -437,7 +440,7 @@ def build_with_genes_gtf(in_gtf_fname, out_gtf_fname, gene_desc_dict):
             for tid, tv in gv[1].items():
                 outFP.write(tv)
                 
-def build_conversions(gtf_file,out_base_fname,contig_lengths,gene_description_reference,bed_as):
+def build_conversions(gtf_file,out_base_fname,contig_lengths,gene_description_reference,bed_as,release_number):
     # check that the input is in the GTF format
     assert os.path.exists(gtf_file), "Input file not found"
     assert gtf_or_gff(gtf_file) == 'gtf', "Input file is not in GTF format"
@@ -450,7 +453,7 @@ def build_conversions(gtf_file,out_base_fname,contig_lengths,gene_description_re
     assert os.path.exists(contig_lengths), "Contig lengths file not found"
 
     with_genes_gtf_fname = out_base_fname + "1.with_genes.gtf"
-    build_with_genes_gtf(gtf_file, with_genes_gtf_fname, gene_desc_dict)
+    build_with_genes_gtf(gtf_file, with_genes_gtf_fname, gene_desc_dict, release_number)
 
     # convert the GTF file to GFF
     with_genes_gff_fname = out_base_fname + "1.with_genes.gff"
@@ -493,26 +496,12 @@ def run(args):
     
     base_name = rdir+"/"+args.prefix+args.release_number+"."+args.suffix
     
-    primary_gtf_fname = base_name+".primary.gtf"
-    primary_gff_fname = base_name+".primary.gff"
+    primary_gtf_fname = base_name+".primary.tmp.gtf"
     primary_aa_fa_fname = base_name+".primary.protein.fa"
 
+    print("Creating primary GTF and protein files")
     with open(primary_gtf_fname, "w+") as outFP:
-        with open(os.path.join(rdir, base_name+".gtf"), "r") as inFP:
-            for line in inFP:
-                lcs = line.split("\t")
-                if lcs[0] == "#":
-                    outFP.write(line)
-                if not len(lcs) == 9:
-                    continue
-
-                if "_alt" in lcs[0]:
-                    continue
-
-                outFP.write(line)
-
-    with open(primary_gff_fname, "w+") as outFP:
-        with open(os.path.join(rdir, base_name+".gff"), "r") as inFP:
+        with open(args.gtf_file, "r") as inFP:
             for line in inFP:
                 lcs = line.split("\t")
                 if lcs[0] == "#":
@@ -528,6 +517,27 @@ def run(args):
     cmd = ["gffread", "-g", args.genome, "-y",
            primary_aa_fa_fname, primary_gtf_fname]
     subprocess.call(cmd)
+
+    # next create the assembly file
+    print("Creating assembly GTF file")
+    assembly_gtf_fname = base_name+".assembly.tmp.gtf"
+    deduplicate_gtf(primary_gtf_fname, assembly_gtf_fname, args.borf)
+    
+
+    # generate the conversion files for all versions of release
+    # 1. regular file
+    print("Creating conversion files for main GTF file")
+    build_conversions(args.gtf_file, base_name, args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number)
+    # 2. primary file
+    print("Creating conversion files for primary GTF file")
+    build_conversions(primary_gtf_fname, base_name+".primary", args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number)
+    # 1. assembly file
+    print("Creating conversion files for assembly GTF file")
+    build_conversions(assembly_gtf_fname, base_name+".assembly", args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number)
+
+    # cleanup
+    os.remove(primary_gtf_fname)
+    os.remove(assembly_gtf_fname)
 
 def main(args):
     parser = argparse.ArgumentParser(description="Process GTF file to generate various derivative files and create a new release of the CHESS annotation.")

@@ -282,6 +282,7 @@ def deduplicate_gtf(in_gtf_fname, out_gtf_fname, borf_fname):
     # keep group information (all tids so we can add tag with duplicates)
 
     keep_tids = {}
+    discard_tids = {}
 
     for (gid,echain), grp in c3.groupby(by=['gene_id','echain']):
         if len(set(grp["tid"].tolist()))==1:
@@ -316,6 +317,8 @@ def deduplicate_gtf(in_gtf_fname, out_gtf_fname, borf_fname):
             keep_tids[max_ilpi_tid] = []
             for idx, row in grp.iterrows():
                 keep_tids[max_ilpi_tid].append(row["tid"])
+                if max_ilpi_tid!=row["tid"]:
+                    discard_tids[row["tid"]] = max_ilpi_tid
             # continue to next group
             continue
 
@@ -323,6 +326,8 @@ def deduplicate_gtf(in_gtf_fname, out_gtf_fname, borf_fname):
             keep_tids[max_mom_tid] = []
             for idx, row in grp.iterrows():
                 keep_tids[max_mom_tid].append(row["tid"])
+                if max_mom_tid!=row["tid"]:
+                    discard_tids[row["tid"]] = max_mom_tid
             # continue to next group
             continue
 
@@ -331,6 +336,8 @@ def deduplicate_gtf(in_gtf_fname, out_gtf_fname, borf_fname):
         keep_tids[rnd_tid] = []
         for idx, row in grp.iterrows():
             keep_tids[rnd_tid].append(row["tid"])
+            if rnd_tid!=row["tid"]:
+                discard_tids[row["tid"]] = rnd_tid
             
     with open(out_gtf_fname,"w+") as outFP:
         with open(in_gtf_fname,"r") as inFP:
@@ -342,12 +349,16 @@ def deduplicate_gtf(in_gtf_fname, out_gtf_fname, borf_fname):
                     outFP.write(line)
                     
                 tid = lcs[8].split("transcript_id \"",1)[1].split("\"",1)[0]
-                if tid in keep_tids:
+                if tid in discard_tids:
+                    continue
+                elif tid in keep_tids:
                     attrs = extract_attributes(lcs[8])
                     if len(keep_tids[tid])>1:
                         attrs["duplicates"] = ",".join(keep_tids[tid])
                     res_line = "\t".join(lcs[:-1]) + "\t" + to_attribute_string(attrs, False, lcs[2])
                     outFP.write(res_line + "\n")
+                else:
+                    outFP.write(line)
                         
 def build_with_genes_gtf(in_gtf_fname, out_gtf_fname, gene_desc_dict, release_number):
     # load a list of genes
@@ -440,7 +451,7 @@ def build_with_genes_gtf(in_gtf_fname, out_gtf_fname, gene_desc_dict, release_nu
             for tid, tv in gv[1].items():
                 outFP.write(tv)
                 
-def build_conversions(gtf_file,out_base_fname,contig_lengths,gene_description_reference,bed_as,release_number):
+def build_conversions(gtf_file,out_base_fname,contig_lengths,gene_description_reference,bed_as,release_number,genome):
     # check that the input is in the GTF format
     assert os.path.exists(gtf_file), "Input file not found"
     assert gtf_or_gff(gtf_file) == 'gtf', "Input file is not in GTF format"
@@ -484,9 +495,13 @@ def build_conversions(gtf_file,out_base_fname,contig_lengths,gene_description_re
     os.rename(with_genes_gff_fname, out_base_fname+".gff")
     os.rename(bb_fname, out_base_fname+".bb")
 
+    # build protein
+    cmd = ["gffread", "-g", genome, "-y",
+           out_base_fname+".protein.fa", out_base_fname+".gtf"]
+    subprocess.call(cmd)
+
     # cleanup
     os.remove(with_genes_gtf_fname)
-    os.remove(with_genes_gff_fname)
     os.remove(genePred_fname)
     os.remove(bedPlus_fname)
                 
@@ -503,7 +518,6 @@ def run(args):
     base_name = rdir+"/"+args.prefix+args.release_number+"."+args.suffix
     
     primary_gtf_fname = base_name+".primary.tmp.gtf"
-    primary_aa_fa_fname = base_name+".primary.protein.fa"
 
     print("Creating primary GTF and protein files")
     with open(primary_gtf_fname, "w+") as outFP:
@@ -520,10 +534,6 @@ def run(args):
 
                 outFP.write(line)
 
-    cmd = ["gffread", "-g", args.genome, "-y",
-           primary_aa_fa_fname, primary_gtf_fname]
-    subprocess.call(cmd)
-
     # next create the assembly file
     print("Creating assembly GTF file")
     assembly_gtf_fname = base_name+".assembly.tmp.gtf"
@@ -533,13 +543,13 @@ def run(args):
     # generate the conversion files for all versions of release
     # 1. regular file
     print("Creating conversion files for main GTF file")
-    build_conversions(args.gtf_file, base_name, args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number)
+    build_conversions(args.gtf_file, base_name, args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number,args.genome)
     # 2. primary file
     print("Creating conversion files for primary GTF file")
-    build_conversions(primary_gtf_fname, base_name+".primary", args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number)
+    build_conversions(primary_gtf_fname, base_name+".primary", args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number,args.genome)
     # 1. assembly file
     print("Creating conversion files for assembly GTF file")
-    build_conversions(assembly_gtf_fname, base_name+".assembly", args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number)
+    build_conversions(assembly_gtf_fname, base_name+".assembly", args.contig_lengths, args.gene_description_reference, args.bed_as, args.release_number,args.genome)
 
     # cleanup
     os.remove(primary_gtf_fname)

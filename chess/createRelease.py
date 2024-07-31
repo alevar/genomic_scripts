@@ -483,6 +483,12 @@ def build_conversions(gtf_file,out_base_fname,contig_lengths,gene_description_re
     shutil.copy(gtf_file, out_base_fname+".gtf")
     os.rename(with_genes_gff_fname, out_base_fname+".gff")
     os.rename(bb_fname, out_base_fname+".bb")
+
+    # cleanup
+    os.remove(with_genes_gtf_fname)
+    os.remove(with_genes_gff_fname)
+    os.remove(genePred_fname)
+    os.remove(bedPlus_fname)
                 
 def run(args):
     # setup output directory

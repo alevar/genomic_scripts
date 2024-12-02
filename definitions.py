@@ -1843,8 +1843,8 @@ def run_gffcompare(gffcompare_params: dict, query:str) -> None:
     # Construct temporary and final file paths
     tmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.tmap"
     refmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.refmap"
-    tmap_fname = Path(outbase+".tmap")
-    refmap_fname = Path(outbase+".refmap")
+    tmap_fname = Path(str(outbase)+".tmap")
+    refmap_fname = Path(str(outbase)+".refmap")
 
     # Move the temporary files to the output directory
     try:

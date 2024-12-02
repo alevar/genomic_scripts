@@ -3,11 +3,13 @@
 import os
 import json
 import random
+import shutil
 import pyBigWig
 import upsetplot
 import subprocess
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 gff3cols=["seqid","source","type","start","end","score","strand","phase","attributes"]
 
@@ -1809,3 +1811,46 @@ def check_slmn(slmn_dir:str)->bool:
             return False
         
         return meta["end_time"] is not None
+
+def run_gffcompare(gffcompare_params: dict, query:str) -> None:
+    """
+    Runs gffcompare with specified parameters.
+
+    This function executes gffcompare using the provided parameters and moves 
+    the generated tmap and refmap files to the output directory alongside other output files.
+
+    Parameters:
+    gffcompare_params (dict): A dictionary of parameters to pass to gffcompare.
+                              The keys are parameter names (e.g., 'r', 'o') and the values
+                              are the corresponding arguments. Use None for flags without values.
+    """
+    qry = Path(query).resolve()
+    # Construct the gffcompare command
+    cmd = ["gffcompare"]
+    for k, v in gffcompare_params.items():
+        cmd.append(k)
+        if v is not None:
+            cmd.append(str(v))
+    cmd.append(str(query))
+    
+    print("Running command:", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+    # Determine output base name
+    outbase = Path(gffcompare_params.get("-o", ""))
+    assert outbase, "Output base name not provided"
+    
+    # Construct temporary and final file paths
+    tmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.tmap"
+    refmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.refmap"
+    tmap_fname = Path(outbase+".tmap")
+    refmap_fname = Path(outbase+".refmap")
+
+    # Move the temporary files to the output directory
+    try:
+        shutil.move(tmap_tmp_fname, tmap_fname)
+        shutil.move(refmap_tmp_fname, refmap_fname)
+        print(f"Moved tmap to {tmap_fname}")
+        print(f"Moved refmap to {refmap_fname}")
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Expected file not found: {e}")

@@ -496,7 +496,7 @@ def get_attribute(gtf_fname:str,attrs,cols:list=None,feature:str="transcript",gf
     res.columns = tmp_cols
     return res
 
-def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False) -> pd.DataFrame:
+def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False,as_dict:bool=False) -> pd.DataFrame|dict:
     """
     This function extracts chains of intervals (of type "feature") for each transcript from a GTF file.
 
@@ -505,7 +505,8 @@ def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False) -> p
     feature_type (str): The feature type to extract chains for (e.g. "CDS" or "exon").
     coords (bool): A flag indicating whether to include the coordinates of each chain in the output DataFrame.
     phase (bool, optional): A flag indicating whether to include the phase of each interval in the output DataFrame. Defaults to False.
-
+    as_dict (bool, optional): A flag indicating whether to return the output as a dictionary. Defaults to False.
+    
     Returns:
     pd.DataFrame: A Pandas DataFrame containing the extracted chains of intervals.
     """
@@ -543,6 +544,10 @@ def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False) -> p
         res.columns = ["tid","has_cds","seqid","strand","coords","chain"]
     else:
         res.columns = ["tid","has_cds","chain"]
+
+    if as_dict:
+        return res.set_index("tid").to_dict(orient="index")
+    
     return res
 
 def chain_inv(chain:list) -> list:
@@ -1809,3 +1814,32 @@ def check_slmn(slmn_dir:str)->bool:
             return False
         
         return meta["end_time"] is not None
+
+def chain2cigar(chain):
+    """
+    Generate a CIGAR string from a chain of genomic segments.
+    
+    Args:
+        chain (list of tuples): Each tuple represents a mapped portion of the alignment.
+    
+    Returns:
+        str: The CIGAR string (using M for matches and N for introns).
+    """
+    if not chain:
+        return ""
+    
+    cigar_parts = []
+    
+    for i, (start, end) in enumerate(chain):
+        # Calculate the length of the mapped region
+        mapped_length = end - start + 1
+        cigar_parts.append(f"{mapped_length}M")
+        
+        # If there's a next region, calculate the intron length
+        if i < len(chain) - 1:
+            next_start, _ = chain[i + 1]
+            intron_length = next_start - end - 1
+            cigar_parts.append(f"{intron_length}N")
+    
+    # Join all parts into a single CIGAR string
+    return "".join(cigar_parts)

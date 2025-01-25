@@ -1846,7 +1846,7 @@ def chain2cigar(chain):
     # Join all parts into a single CIGAR string
     return "".join(cigar_parts)
 
-def run_gffcompare(gffcompare_params: dict, query:str) -> None:
+def run_gffcompare(gffcompare_params:dict, query:str=None) -> None:
     """
     Runs gffcompare with specified parameters.
 
@@ -1857,15 +1857,20 @@ def run_gffcompare(gffcompare_params: dict, query:str) -> None:
     gffcompare_params (dict): A dictionary of parameters to pass to gffcompare.
                               The keys are parameter names (e.g., 'r', 'o') and the values
                               are the corresponding arguments. Use None for flags without values.
+    query (str): query filename (could be the list). required unless "-i" is provided in the gffcompare_params.
     """
-    qry = Path(query).resolve()
+    
     # Construct the gffcompare command
     cmd = ["gffcompare"]
     for k, v in gffcompare_params.items():
         cmd.append(k)
         if v is not None:
             cmd.append(str(v))
-    cmd.append(str(query))
+    # if query not present verify "-i" is present
+    if query is None:
+        assert "-i" in gffcompare_params, "Query file not provided"
+    else:
+        cmd.append(str(query))
     
     print("Running command:", " ".join(cmd))
     subprocess.run(cmd, check=True)

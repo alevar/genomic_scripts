@@ -1257,7 +1257,23 @@ def subset_gtf(in_gtf_fname:str,out_gtf_fname:str,gids:list,tids:list) -> None:
                 if writing_tid == tid:
                     outFP.write(line)
                     continue    
-                
+
+def subset_tracking(tracking_fname: str, out_tracking_fname: str, tids: List[str]):
+    """
+    This function subsets a tracking file by transcript ID. The output tracking file will only contain entries with the selected transcript IDs.
+
+    Parameters:
+    tracking_fname (str): The name of the input tracking file.
+    out_tracking_fname (str): The name of the output tracking file.
+    tids (list): A list of transcript IDs to keep.
+    """
+    
+    with open(tracking_fname, 'r') as inFP, open(out_tracking_fname, 'w') as outFP:
+        for line in inFP:
+            tid = line.split("\t")[0]
+            if tid in tids:
+                outFP.write(line)
+
 def get_coding_stats(gtf_fname:str) -> None:
     """
     This function computes statistics about the coding genes in a GTF file.
@@ -1862,12 +1878,14 @@ def run_gffcompare(gffcompare_params:dict, query:str=None) -> None:
     
     # Construct the gffcompare command
     cmd = ["gffcompare"]
+    query_lst = False
     for k, v in gffcompare_params.items():
         cmd.append(k)
         if v is not None:
             cmd.append(str(v))
     # if query not present verify "-i" is present
     if query is None:
+        query_lst = True
         assert "-i" in gffcompare_params, "Query file not provided"
     else:
         cmd.append(str(query))
@@ -1880,16 +1898,18 @@ def run_gffcompare(gffcompare_params:dict, query:str=None) -> None:
     assert outbase, "Output base name not provided"
     
     # Construct temporary and final file paths
-    tmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.tmap"
-    refmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.refmap"
-    tmap_fname = Path(str(outbase)+".tmap")
-    refmap_fname = Path(str(outbase)+".refmap")
+    # skipped if list provided since tmap and refmap don't seem to be generated
+    if not query_lst:
+        tmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.tmap"
+        refmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.refmap"
+        tmap_fname = Path(str(outbase)+".tmap")
+        refmap_fname = Path(str(outbase)+".refmap")
 
-    # Move the temporary files to the output directory
-    try:
-        shutil.move(tmap_tmp_fname, tmap_fname)
-        shutil.move(refmap_tmp_fname, refmap_fname)
-        print(f"Moved tmap to {tmap_fname}")
-        print(f"Moved refmap to {refmap_fname}")
-    except FileNotFoundError as e:
-        raise FileNotFoundError(f"Expected file not found: {e}")
+        # Move the temporary files to the output directory
+        try:
+            shutil.move(tmap_tmp_fname, tmap_fname)
+            shutil.move(refmap_tmp_fname, refmap_fname)
+            print(f"Moved tmap to {tmap_fname}")
+            print(f"Moved refmap to {refmap_fname}")
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Expected file not found: {e}")

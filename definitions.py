@@ -498,7 +498,7 @@ def get_attribute(gtf_fname:str,attrs,cols:list=None,feature:str="transcript",gf
     res.columns = tmp_cols
     return res
 
-def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False) -> pd.DataFrame:
+def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False,as_dict:bool=False) -> pd.DataFrame|dict:
     """
     This function extracts chains of intervals (of type "feature") for each transcript from a GTF file.
 
@@ -507,7 +507,8 @@ def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False) -> p
     feature_type (str): The feature type to extract chains for (e.g. "CDS" or "exon").
     coords (bool): A flag indicating whether to include the coordinates of each chain in the output DataFrame.
     phase (bool, optional): A flag indicating whether to include the phase of each interval in the output DataFrame. Defaults to False.
-
+    as_dict (bool, optional): A flag indicating whether to return the output as a dictionary. Defaults to False.
+    
     Returns:
     pd.DataFrame: A Pandas DataFrame containing the extracted chains of intervals.
     """
@@ -545,6 +546,10 @@ def get_chains(gtf_fname:str,feature_type:str,coords:bool,phase:bool=False) -> p
         res.columns = ["tid","has_cds","seqid","strand","coords","chain"]
     else:
         res.columns = ["tid","has_cds","chain"]
+
+    if as_dict:
+        return res.set_index("tid").to_dict(orient="index")
+    
     return res
 
 def chain_inv(chain:list) -> list:
@@ -1252,7 +1257,23 @@ def subset_gtf(in_gtf_fname:str,out_gtf_fname:str,gids:list,tids:list) -> None:
                 if writing_tid == tid:
                     outFP.write(line)
                     continue    
-                
+
+def subset_tracking(tracking_fname: str, out_tracking_fname: str, tids: List[str]):
+    """
+    This function subsets a tracking file by transcript ID. The output tracking file will only contain entries with the selected transcript IDs.
+
+    Parameters:
+    tracking_fname (str): The name of the input tracking file.
+    out_tracking_fname (str): The name of the output tracking file.
+    tids (list): A list of transcript IDs to keep.
+    """
+    
+    with open(tracking_fname, 'r') as inFP, open(out_tracking_fname, 'w') as outFP:
+        for line in inFP:
+            tid = line.split("\t")[0]
+            if tid in tids:
+                outFP.write(line)
+
 def get_coding_stats(gtf_fname:str) -> None:
     """
     This function computes statistics about the coding genes in a GTF file.
@@ -1815,7 +1836,36 @@ def check_slmn(slmn_dir:str)->bool:
         
         return meta["end_time"] is not None
 
-def run_gffcompare(gffcompare_params: dict, query:str) -> None:
+def chain2cigar(chain):
+    """
+    Generate a CIGAR string from a chain of genomic segments.
+    
+    Args:
+        chain (list of tuples): Each tuple represents a mapped portion of the alignment.
+    
+    Returns:
+        str: The CIGAR string (using M for matches and N for introns).
+    """
+    if not chain:
+        return ""
+    
+    cigar_parts = []
+    
+    for i, (start, end) in enumerate(chain):
+        # Calculate the length of the mapped region
+        mapped_length = end - start + 1
+        cigar_parts.append(f"{mapped_length}M")
+        
+        # If there's a next region, calculate the intron length
+        if i < len(chain) - 1:
+            next_start, _ = chain[i + 1]
+            intron_length = next_start - end - 1
+            cigar_parts.append(f"{intron_length}N")
+    
+    # Join all parts into a single CIGAR string
+    return "".join(cigar_parts)
+
+def run_gffcompare(gffcompare_params:dict, query:str=None) -> None:
     """
     Runs gffcompare with specified parameters.
 
@@ -1826,15 +1876,22 @@ def run_gffcompare(gffcompare_params: dict, query:str) -> None:
     gffcompare_params (dict): A dictionary of parameters to pass to gffcompare.
                               The keys are parameter names (e.g., 'r', 'o') and the values
                               are the corresponding arguments. Use None for flags without values.
+    query (str): query filename (could be the list). required unless "-i" is provided in the gffcompare_params.
     """
-    qry = Path(query).resolve()
+    
     # Construct the gffcompare command
     cmd = ["gffcompare"]
+    query_lst = False
     for k, v in gffcompare_params.items():
         cmd.append(k)
         if v is not None:
             cmd.append(str(v))
-    cmd.append(str(query))
+    # if query not present verify "-i" is present
+    if query is None:
+        query_lst = True
+        assert "-i" in gffcompare_params, "Query file not provided"
+    else:
+        cmd.append(str(query))
     
     print("Running command:", " ".join(cmd))
     subprocess.run(cmd, check=True)
@@ -1844,16 +1901,18 @@ def run_gffcompare(gffcompare_params: dict, query:str) -> None:
     assert outbase, "Output base name not provided"
     
     # Construct temporary and final file paths
-    tmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.tmap"
-    refmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.refmap"
-    tmap_fname = Path(str(outbase)+".tmap")
-    refmap_fname = Path(str(outbase)+".refmap")
+    # skipped if list provided since tmap and refmap don't seem to be generated
+    if not query_lst:
+        tmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.tmap"
+        refmap_tmp_fname = qry.parent / f"{outbase.name}.{qry.name}.refmap"
+        tmap_fname = Path(str(outbase)+".tmap")
+        refmap_fname = Path(str(outbase)+".refmap")
 
-    # Move the temporary files to the output directory
-    try:
-        shutil.move(tmap_tmp_fname, tmap_fname)
-        shutil.move(refmap_tmp_fname, refmap_fname)
-        print(f"Moved tmap to {tmap_fname}")
-        print(f"Moved refmap to {refmap_fname}")
-    except FileNotFoundError as e:
-        raise FileNotFoundError(f"Expected file not found: {e}")
+        # Move the temporary files to the output directory
+        try:
+            shutil.move(tmap_tmp_fname, tmap_fname)
+            shutil.move(refmap_tmp_fname, refmap_fname)
+            print(f"Moved tmap to {tmap_fname}")
+            print(f"Moved refmap to {refmap_fname}")
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Expected file not found: {e}")

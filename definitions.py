@@ -1258,7 +1258,7 @@ def subset_gtf(in_gtf_fname:str,out_gtf_fname:str,gids:list,tids:list) -> None:
                     outFP.write(line)
                     continue    
 
-def subset_tracking(tracking_fname: str, out_tracking_fname: str, tids: List[str]):
+def subset_tracking(tracking_fname: str, out_tracking_fname: str, tids):
     """
     This function subsets a tracking file by transcript ID. The output tracking file will only contain entries with the selected transcript IDs.
 
@@ -1267,7 +1267,7 @@ def subset_tracking(tracking_fname: str, out_tracking_fname: str, tids: List[str
     out_tracking_fname (str): The name of the output tracking file.
     tids (list): A list of transcript IDs to keep.
     """
-    
+
     with open(tracking_fname, 'r') as inFP, open(out_tracking_fname, 'w') as outFP:
         for line in inFP:
             tid = line.split("\t")[0]
@@ -1913,3 +1913,167 @@ def run_gffcompare(gffcompare_params:dict, query:str=None) -> None:
             print(f"Moved refmap to {refmap_fname}")
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Expected file not found: {e}")
+
+def parse_tracking_line(line:str):
+    lcs = line.strip().split("\t")
+    tid = lcs[0]
+    loc = lcs[1]
+    ref_gid,ref_tid = lcs[2].split("|")
+    code = lcs[3]
+    queries = []
+    for col in lcs[4:]:
+        if col == "-":
+            continue
+        query_id,rest = col.split(":",1)
+        for sub_col in col.split(","):
+            qgid,qtid,enum,fpkm,tpm,cov,tlen = rest.split("|")
+            queries.append({
+                "query_id": query_id,
+                "qgid": qgid,
+                "qtid": qtid,
+                "enum": float(enum),
+                "fpkm": float(fpkm),
+                "tpm": float(tpm),
+                "cov": float(cov),
+                "len": float(tlen)
+            })
+    return {
+        "tid": tid,
+        "loc": loc,
+        "ref_gid": ref_gid,
+        "ref_tid": ref_tid,
+        "code": code,
+        "queries": queries
+    }
+
+def combine_tracking_gtf(gtf_fname:str, tracking_fnames: dict, out_fname:str):
+    """
+    This function combines a GTF file with a tracking file.
+    loads the tpms, coverage and sample counts from tracking into the gtf
+
+    Parameters:
+    gtf_fname (str): The name of the GTF file to load.
+    tracking_fnames (dict): dictionary of tracking files leadin gup to the gtf file. 
+        The hierarchy is traversed to coalesce the tracking data for each transcript.
+        Naming of the entries in the hierarchy - each entry is expected to be a tuple (name, tracking_fname)
+    out_fname (str): The name of the output GTF file.
+    """
+
+    def _recurse_tid_map(tid:str, tid_map:dict):
+        if tid not in tid_map:
+            return tid
+        else:
+            return _recurse_tid_map(tid_map[tid], tid_map)
+        
+    def _recursive_append(d:dict, key:list, val):
+        if len(key)==1:
+            d.setdefault(key[0],[]).append(val)
+        else:
+            if key[0] not in d:
+                d[key[0]] = {}
+            _recursive_append(d[key[0]], key[1:], val)
+            
+    def _recursive_get(d:dict, key:list):
+        # return a list of all value-containing nodes under a given dict
+        if len(key)==1:
+            return d[key[0]]
+        else:
+            return _recursive_get(d[key[0]], key[1:])
+        
+    def collect_values(tracking_data:dict,tracking_key:str):
+        values = []
+        def traverse(d,tracking_key):
+            if isinstance(d,dict):
+                for value in d.values():
+                    traverse(value,tracking_key)
+            else:
+                for value in d:
+                    values.append(value[tracking_key])
+
+        traverse(tracking_data,tracking_key)
+        return values
+    
+    def _add_attributes_from_tracking(tracking_data:dict, attrs:dict):
+        assert len(tracking_data)==1, "hierrarchy dict should always have a single parent node"
+        level_name = list(tracking_data.keys())[0]
+        
+        # recursively adds attributes from the levels of hierarchy of the tracking data
+        tpms = collect_values(tracking_data,"tpm")
+        covs = collect_values(tracking_data,"cov")
+        attrs[f"{level_name}_tpm_mean"] = str(np.mean(tpms))
+        attrs[f"{level_name}_cov_mean"] = str(np.mean(covs))
+        attrs[f"{level_name}_num_samples"] = str(len(tpms))
+        
+        if isinstance(tracking_data[level_name],dict):
+            for child_name,child_values in tracking_data[level_name].items():
+                _add_attributes_from_tracking({child_name:child_values}, attrs)
+
+    def _recursive_tracking_load(tracking:dict, path:list, tracking_data:dict, tid_map:dict):
+        # tracking dict is expected to be a dictionary with the following structure:
+        # single parent key with 0 or more children
+        # where each node is a tuple (name, tracking_fname)
+        # path is a list of tuples (name, tracking_fname) leading up to the current node
+        assert len(tracking)==1, "Only one parent should be present in the tracking dictionary"
+        (parent_tracking_name, parent_tracking_fname), children_tracking = tracking.popitem()
+        with open(parent_tracking_fname, 'r') as inFP:
+            for line in inFP:
+                ldata = parse_tracking_line(line)
+                
+                tid = ldata["tid"]
+
+                for qry in ldata["queries"]:
+                    query_final = qry["cov"]>0 and qry["fpkm"]>0 and qry["tpm"]>0 # indicates that the query data contains actual assembly information and is not just an aggregation of another merge
+                    if query_final:
+                        # find the merged tid and add the tracking data to it
+                        ptid = _recurse_tid_map(tid, tid_map)
+                        _recursive_append(tracking_data[ptid], path, qry)
+                    else:
+                        # should be able to add query as a new level in the hierarchy map
+                        # should not cause any issues with the tid_map
+                        qtid = qry["qtid"]
+                        assert qtid not in tid_map, f"Redundant tid {qtid} found in tracking files"
+                        tid_map[qtid] = tid
+
+        for pt, ct in children_tracking.items():
+            new_path = path + [pt[0]]
+            _recursive_tracking_load({pt:ct}, new_path, tracking_data, tid_map)
+
+        if len(children_tracking)==0:
+            return
+    
+    # load tids from the tracking (values of the first column)
+    assert len(tracking_fnames) == 1, "Only one tracking file should be provided at the base level"
+    parent_tracking_name, parent_tracking_fname = list(tracking_fnames.keys())[0]
+    tids = set([line.split("\t",1)[0] for line in open(parent_tracking_fname) if line.strip()])
+    # construct a dictionary with the tids as keys and the tracking data as values
+    tracking_data = {x:{parent_tracking_name:{}} for x in tids}
+
+    # initialize tid map, helping us track tids across the hierarchy
+    # will fail if redundat tids are present.
+    # However, adds ids from parent to child, without caching the child IDs unless they are used as parent in next iterations.
+    tid_map = {}
+
+    # iterate over the dictionary of tracking files
+    for parent_tracking, child_trackings in tracking_fnames.items():
+        _recursive_tracking_load({parent_tracking: child_trackings}, [parent_tracking_name], tracking_data, tid_map)
+
+    # now we can iterate over the gtf and add the tracking data in whichever way we wish
+    with open(gtf_fname, 'r') as inFP, open(out_fname, 'w') as outFP:
+        for line in inFP:
+            line = line.strip()
+            lcs = line.split("\t")
+            if not len(lcs) == 9:
+                continue
+
+            if lcs[2]=="transcript":
+                attrs = extract_attributes(lcs[8],False)
+                # add tracking data to the attributes
+                tid = attrs["transcript_id"]
+                assert tid in tracking_data, f"Transcript {tid} not found in tracking data"
+                tracking = tracking_data[tid]
+                _add_attributes_from_tracking(tracking, attrs)
+                
+                lcs[8] = to_attribute_string(attrs,False,"transcript")
+                line = "\t".join(lcs)
+                
+            outFP.write(f"{line}\n")

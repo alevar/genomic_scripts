@@ -10,6 +10,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from typing import List
 
 gff3cols=["seqid","source","type","start","end","score","strand","phase","attributes"]
 
@@ -1764,31 +1765,34 @@ def trans2genome(chain:list,strand:str,zero_pos:int) -> int:
     assert chain_pos>=0,"unexpected chain_pos<0"
     return chain_pos
 
-def cut(chain:list,start:int,end:int) -> list:
+def cut(chain: list, start: int, end: int) -> list:
     """
     This function cuts a chain of intervals to a specified start and end position.
-
+    If the cut range is completely outside the chain, returns an empty list.
+    
     Parameters:
-    chain (list): A chain of intervals.
+    chain (list): A chain of intervals [(start1, end1), (start2, end2), ...].
     start (int): The start position to cut to.
     end (int): The end position to cut to.
-
+    
     Returns:
     list: A chain cut to the specified start and end position.
+          Returns empty list if cut range is outside all intervals.
     """
+    if not chain or start >= end:
+        return []
+    
     res = []
-    for cs,ce in chain:
-        new_cs = cs
-        new_ce = ce
-        if new_cs<=start and new_ce>=start:
-            new_cs = start
-        if new_ce>=end:
-            new_ce = end
-            res.append((new_cs,new_ce))
-            break
-        if new_ce<start or new_cs>end:
+    for cs, ce in chain:
+        if ce < start or cs > end:
             continue
-        res.append((new_cs,new_ce))
+            
+        new_cs = max(cs, start)
+        new_ce = min(ce, end)
+        
+        if new_cs < new_ce:
+            res.append((new_cs, new_ce))
+    
     return res
 
 def num_exons(gtf_fname:str) -> pd.DataFrame:

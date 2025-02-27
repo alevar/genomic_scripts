@@ -10,6 +10,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from typing import List
 
 gff3cols=["seqid","source","type","start","end","score","strand","phase","attributes"]
 
